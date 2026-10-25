@@ -72,6 +72,8 @@ android {
             // For production distribution, configure android/key.properties and a persistent keystore.
             signingConfig hasReleaseSigning ? signingConfigs.release : signingConfigs.debug
             minifyEnabled false
+            // Resource shrinking requires code shrinking. Keep both disabled for this test APK.
+            shrinkResources false
             proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
         }
     }
