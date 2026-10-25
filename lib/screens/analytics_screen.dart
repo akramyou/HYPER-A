@@ -28,9 +28,12 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
   }
 
   int get expiredCount => batches.where((b) {
-    if (b.expiryDate == null) return false;
-    try => DateTime.parse(b.expiryDate!).isBefore(DateTime.now());
-    catch (_) => false;
+    if (b.expiryDate == null || b.expiryDate!.isEmpty) return false;
+    try {
+      return DateTime.parse(b.expiryDate!).isBefore(DateTime.now());
+    } catch (_) {
+      return false;
+    }
   }).length;
 
   int get safeCount => batches.where((b) {
@@ -38,7 +41,9 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
     try {
       final d = DateTime.parse(b.expiryDate!);
       return d.isAfter(DateTime.now().add(const Duration(days: 90)));
-    } catch (_) => false;
+    } catch (_) {
+      return false;
+    }
   }).length;
 
   int get warningCount => batches.length - expiredCount - safeCount;
@@ -86,15 +91,22 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
                 height: 250,
                 child: BarChart(
                   BarChartData(
-                    titlesData: FlTitlesData(show: true),
                     barGroups: [
                       BarChartGroupData(x: 0, barRods: [BarChartRodData(toY: items.length.toDouble(), color: Colors.blue)]),
                       BarChartGroupData(x: 1, barRods: [BarChartRodData(toY: lowStockCount.toDouble(), color: Colors.red)]),
                     ],
                     titlesData: FlTitlesData(
-                      bottomTitles: AxisTitles(sideTitles: SideTitles(showTitles: true, getTitlesWidget: (value, meta) {
-                        return value == 0 ? const Text('إجمالي') : const Text('منخفض');
-                      })),
+                      show: true,
+                      bottomTitles: AxisTitles(
+                        sideTitles: SideTitles(
+                          showTitles: true,
+                          getTitlesWidget: (value, meta) {
+                            if (value.toInt() == 0) return const Text('إجمالي');
+                            if (value.toInt() == 1) return const Text('منخفض');
+                            return const SizedBox.shrink();
+                          },
+                        ),
+                      ),
                     ),
                   ),
                 ),

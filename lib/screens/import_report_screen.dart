@@ -158,7 +158,7 @@ class _ImportReportScreenState extends State<ImportReportScreen> {
 
   String _excelCellToString(dynamic value) {
     if (value == null) return '';
-    if (value is TextCellValue) return value.value;
+    if (value is TextCellValue) return _excelTextSpanToString(value.value);
     if (value is FormulaCellValue) return value.formula;
     if (value is IntCellValue) return value.value.toString();
     if (value is DoubleCellValue) return value.value.toString();
@@ -169,6 +169,26 @@ class _ImportReportScreenState extends State<ImportReportScreen> {
     if (value is DateTimeCellValue) return value.asDateTimeLocal().toIso8601String();
     if (value is TimeCellValue) return value.asDuration().toString();
     return value.toString();
+  }
+
+  // excel 4.x represents text cells as TextSpan so it can retain rich text.
+  // Flatten nested spans into plain text before mapping spreadsheet columns.
+  String _excelTextSpanToString(dynamic span) {
+    final buffer = StringBuffer();
+
+    void appendSpan(dynamic current) {
+      final text = current.text;
+      if (text is String) buffer.write(text);
+      final children = current.children;
+      if (children is Iterable) {
+        for (final child in children) {
+          appendSpan(child);
+        }
+      }
+    }
+
+    appendSpan(span);
+    return buffer.toString();
   }
 
   Future<void> _saveConfigAndImport() async {

@@ -3,7 +3,7 @@ import 'package:hyper_dammam3/database/database_helper.dart';
 import 'package:hyper_dammam3/models/item_model.dart';
 import 'package:hyper_dammam3/models/item_batch_model.dart';
 import 'package:share_plus/share_plus.dart';
-import 'package:intl/intl.dart';
+import 'package:intl/intl.dart' as intl;
 
 class ReportsScreen extends StatefulWidget {
   const ReportsScreen({super.key});
@@ -41,7 +41,7 @@ class _ReportsScreenState extends State<ReportsScreen> {
             IconButton(
               icon: const Icon(Icons.share),
               onPressed: () async {
-                final text = 'تقرير هايبر ماركت\nالتاريخ: ${DateFormat('yyyy-MM-dd').format(DateTime.now())}\n\nأصناف: ${items.length}\nدفعات: ${batches.length}';
+                final text = 'تقرير هايبر ماركت\nالتاريخ: ${intl.DateFormat('yyyy-MM-dd').format(DateTime.now())}\n\nأصناف: ${items.length}\nدفعات: ${batches.length}';
                 await Share.share(text);
               },
             ),

@@ -107,24 +107,41 @@ class _ItemDetailScreenState extends State<ItemDetailScreen> {
                             child: ListTile(
                               title: Text('دفعة: ${batch.batchNumber ?? 'غير محدد'}', style: const TextStyle(fontWeight: FontWeight.bold)),
                               subtitle: Text('تاريخ الإنتاج: ${batch.productionDate ?? '-'} | الانتهاء: ${batch.expiryDate ?? '-'}'),
-                              trailing: Column(
-                                mainAxisAlignment: MainAxisAlignment.center,
+                              trailing: Row(
+                                mainAxisSize: MainAxisSize.min,
                                 children: [
-                                  Container(
-                                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                                    decoration: BoxDecoration(
-                                      color: batch.statusColor.withOpacity(0.1),
-                                      borderRadius: BorderRadius.circular(12),
-                                    ),
-                                    child: Text(batch.expiryStatus, style: TextStyle(color: batch.statusColor, fontWeight: FontWeight.bold, fontSize: 12)),
+                                  Column(
+                                    mainAxisSize: MainAxisSize.min,
+                                    mainAxisAlignment: MainAxisAlignment.center,
+                                    children: [
+                                      Container(
+                                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                                        decoration: BoxDecoration(
+                                          color: batch.statusColor.withOpacity(0.1),
+                                          borderRadius: BorderRadius.circular(12),
+                                        ),
+                                        child: Text(
+                                          batch.expiryStatus,
+                                          style: TextStyle(
+                                            color: batch.statusColor,
+                                            fontWeight: FontWeight.bold,
+                                            fontSize: 12,
+                                          ),
+                                        ),
+                                      ),
+                                      const SizedBox(height: 4),
+                                      Text(
+                                        '${batch.quantity} ${widget.item.uom}',
+                                        style: const TextStyle(fontSize: 12),
+                                      ),
+                                    ],
                                   ),
-                                  const SizedBox(height: 4),
-                                  Text('${batch.quantity} ${widget.item.uom}', style: const TextStyle(fontSize: 12)),
+                                  IconButton(
+                                    tooltip: 'حذف الدفعة',
+                                    icon: const Icon(Icons.delete, color: Colors.red),
+                                    onPressed: () => _deleteBatch(batch.id!),
+                                  ),
                                 ],
-                              ),
-                              trailing: IconButton(
-                                icon: const Icon(Icons.delete, color: Colors.red),
-                                onPressed: () => _deleteBatch(batch.id!),
                               ),
                             ),
                           );
