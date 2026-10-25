@@ -55,6 +55,17 @@ android {
         versionName flutterVersionName
     }
 
+    // Keep Java and Kotlin bytecode targets aligned with the JDK 17 toolchain
+    // used by GitHub Actions and required by Android Gradle Plugin 8.x.
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+
+    kotlinOptions {
+        jvmTarget = '17'
+    }
+
     signingConfigs {
         release {
             if (hasReleaseSigning) {
