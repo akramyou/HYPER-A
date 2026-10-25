@@ -1,7 +1,7 @@
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
-import 'package:intl/intl.dart';
+import 'package:intl/intl.dart' show DateFormat;
 import 'package:hyper_dammam3/database/database_helper.dart';
 import 'package:hyper_dammam3/models/item_batch_model.dart';
 import 'package:hyper_dammam3/services/ocr_service.dart';
@@ -23,6 +23,20 @@ class _AddEditBatchScreenState extends State<AddEditBatchScreen> {
   String? _expiryDate;
   final OcrService _ocr = OcrService();
   bool _isScanning = false;
+
+  bool get _isExpiryDatePast {
+    final value = _expiryDate;
+    if (value == null || value.isEmpty) return false;
+    try {
+      final expiry = DateTime.parse(value);
+      final expiryDay = DateTime(expiry.year, expiry.month, expiry.day);
+      final now = DateTime.now();
+      final today = DateTime(now.year, now.month, now.day);
+      return expiryDay.isBefore(today);
+    } catch (_) {
+      return false;
+    }
+  }
 
   @override
   void initState() {
@@ -163,7 +177,7 @@ class _AddEditBatchScreenState extends State<AddEditBatchScreen> {
                   padding: const EdgeInsets.only(top: 8),
                   child: Text(
                     'تاريخ الانتهاء: $_expiryDate',
-                    style: TextStyle(color: _expiryDate! < DateTime.now().toIso8601String().substring(0, 10) ? Colors.red : Colors.green, fontWeight: FontWeight.bold),
+                    style: TextStyle(color: _isExpiryDatePast ? Colors.red : Colors.green, fontWeight: FontWeight.bold),
                   ),
                 ),
                 const SizedBox(height: 24),
@@ -171,7 +185,7 @@ class _AddEditBatchScreenState extends State<AddEditBatchScreen> {
                   onPressed: _isScanning ? null : _save,
                   icon: const Icon(Icons.save),
                   label: Text(widget.batch == null ? 'إضافة الدفعة' : 'تعديل الدفعة'),
-                  style: ElevatedButton.styleFrom(minSize: const Size.fromHeight(50)),
+                  style: ElevatedButton.styleFrom(minimumSize: const Size.fromHeight(50)),
                 ),
               ],
             ),
