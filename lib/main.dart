@@ -25,7 +25,14 @@ class HyperDammam3App extends StatelessWidget {
       debugShowCheckedModeBanner: false,
       theme: ThemeData(
         useMaterial3: true,
-        colorScheme: ColorScheme.fromSeed(seedColor: const Color(0xFF2E7D32)),
+        colorScheme: ColorScheme.fromSeed(seedColor: const Color(0xFF2F6B3A)),
+        scaffoldBackgroundColor: const Color(0xFFF7F8F4),
+        appBarTheme: const AppBarTheme(
+          backgroundColor: Color(0xFFF7F8F4),
+          surfaceTintColor: Colors.transparent,
+          elevation: 0,
+          centerTitle: false,
+        ),
       ),
       locale: const Locale('ar', 'SA'),
       supportedLocales: const [Locale('ar', 'SA'), Locale('en', 'US')],

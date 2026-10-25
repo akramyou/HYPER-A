@@ -29,3 +29,26 @@ subprojects {
 task clean(type: Delete) {
     delete rootProject.buildDir
 }
+
+// Compatibility fallback for older Flutter plugins that do not declare an Android namespace.
+// Prefer the package declared in the plugin manifest; synthesize a stable value only when absent.
+subprojects { subproject ->
+    subproject.plugins.withId('com.android.library') {
+        def androidExtension = subproject.extensions.findByName('android')
+        if (androidExtension != null && (!androidExtension.namespace || androidExtension.namespace.trim().isEmpty())) {
+            def manifestFile = subproject.file('src/main/AndroidManifest.xml')
+            def namespaceValue = null
+            if (manifestFile.exists()) {
+                def manifestMatcher = manifestFile.getText('UTF-8') =~ /package\s*=\s*["']([^"']+)["']/
+                if (manifestMatcher.find()) {
+                    namespaceValue = manifestMatcher.group(1)
+                }
+            }
+            if (namespaceValue == null || namespaceValue.trim().isEmpty()) {
+                def safeModuleName = subproject.name.replaceAll(/[^A-Za-z0-9_]/, '_')
+                namespaceValue = "com.hyper.compat.${safeModuleName}"
+            }
+            androidExtension.namespace = namespaceValue
+        }
+    }
+}
