@@ -72,3 +72,7 @@ flutter build apk --release --target-platform android-arm64 --analyze-size
 - Lightspeed Retail: تقرير Sell-through يستخدم الفترة الزمنية، ومتوسط البيع اليومي، ونسبة البيع من المخزون وأيام التغطية، مع مرشحات المنتجات. https://x-series-support.lightspeedhq.com/hc/en-us/articles/25534083755675-Using-the-sell-through-inventory-report
 
 تُحسب نتائج Hyper من اللقطات التاريخية المحلية، وتظل تقديرية إن لم يحدد مصدر التقرير معنى `SOLD_STK` بدقة. لا تعرض النسخة أرباحًا أو تكلفة مخزون أو قيمة دوران مالية؛ لأن عينة المصدر لا تتضمن أسعار التكلفة/البيع.
+
+### Dependency resolution note
+
+`intl: any` is intentional because Flutter SDK `flutter_localizations` pins the compatible `intl` version for the selected Flutter SDK. Do not force a conflicting fixed `intl` range; resolve dependencies with `flutter pub get`.
