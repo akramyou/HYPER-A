@@ -110,3 +110,8 @@ This version deliberately overwrites the two known legacy paths:
 The current implementation uses `google_mlkit_text_recognition`, `google_mlkit_barcode_scanning`, and `google_mlkit_image_labeling`; it does not restore the umbrella `google_ml_kit` dependency. This package-level/static cleanup has been checked locally. Flutter analysis, tests, and APK compilation still need to be run by GitHub Actions because Flutter/Dart SDKs are not installed in this environment.
 
 When uploading, select the *contents* of the inner `hyper_inventory` directory and place them at the repository's project root. Ensure `pubspec.yaml`, `lib/`, `android/`, `test/`, and `.github/` are at the same root level.
+
+
+## XLSX text-cell compatibility fix (v7)
+
+Excel text cells expose a package-specific `TextSpan`; the importer now recursively joins its `text` and nested `children` instead of calling the unsupported `toPlainText()` method. An automated test covers a workbook with nested rich text. Flutter analysis/tests/build must still be run in GitHub Actions to verify the full Android toolchain.

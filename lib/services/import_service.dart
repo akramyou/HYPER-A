@@ -63,7 +63,7 @@ class ImportService {
   static String _cellToText(Data? cell) {
     final value = cell?.value;
     if (value == null) return '';
-    if (value is TextCellValue) return value.value.toPlainText();
+    if (value is TextCellValue) return _flattenExcelTextSpan(value.value);
     if (value is IntCellValue) return value.value.toString();
     if (value is DoubleCellValue) return value.value.toString();
     if (value is BoolCellValue) return value.value ? 'TRUE' : 'FALSE';
@@ -74,6 +74,22 @@ class ImportService {
     if (value is DateTimeCellValue) return value.asDateTimeLocal().toIso8601String();
     if (value is FormulaCellValue) return value.formula;
     return value.toString();
+  }
+
+  /// The `excel` package exposes rich-text cell content as its own TextSpan
+  /// type. Unlike Flutter's InlineSpan, that type has no `toPlainText()` API,
+  /// so flatten its text and children explicitly while preserving cell text.
+  static String _flattenExcelTextSpan(TextSpan span) {
+    final buffer = StringBuffer();
+    final ownText = span.text;
+    if (ownText != null) buffer.write(ownText);
+    final children = span.children;
+    if (children != null) {
+      for (final child in children) {
+        buffer.write(_flattenExcelTextSpan(child));
+      }
+    }
+    return buffer.toString();
   }
 
   static Map<String, int> suggestedMapping(List<String> headers) => ReportDetector.autoMap(headers);
