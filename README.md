@@ -76,3 +76,8 @@ flutter build apk --release --target-platform android-arm64 --analyze-size
 ### Dependency resolution note
 
 `intl: any` is intentional because Flutter SDK `flutter_localizations` pins the compatible `intl` version for the selected Flutter SDK. Do not force a conflicting fixed `intl` range; resolve dependencies with `flutter pub get`.
+
+
+## Dependency compatibility note (v5)
+
+`file_picker` is pinned to version `8.0.5` because `8.0.7` brings a `win32` dependency constraint that requires Dart SDK `>=3.4.0`; older Flutter/Dart runners may fail dependency resolution. The Android GitHub Actions workflow sets Flutter `3.24.5` and targets ARM64. After upload, confirm that the workflow file in the GitHub repository is also updated and the CI logs show the intended Flutter version.
