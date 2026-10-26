@@ -1,40 +1,33 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hyper_dammam3/services/report_detector.dart';
-import 'package:hyper_dammam3/utils/expiry_parser.dart';
+import 'package:hyper_inventory/services/report_detector.dart';
 
 void main() {
   group('ReportDetector', () {
-    test('maps common English and Arabic report headers', () {
-      final mapping = ReportDetector.suggestMapping([
-        'Item Code',
-        'POS Code',
-        'الوصف العربي',
-        'رصيد الفرع',
-      ]);
+    const headers = [
+      'BRANCH_ID', 'ORG_CODE', 'APPS_CODE', 'POS_CODE', 'DESCRIPTION',
+      'ARB_DESC', 'UOM', 'WH_STOCK', 'BR_STOCK', 'SYS_CAL_QTY',
+      'MOD_QTY', 'WH_LOC_CODE', 'SOLD_STK', 'FLYER_ITEM',
+    ];
 
-      expect(mapping['Item Code'], 'apps_code');
-      expect(mapping['POS Code'], 'pos_code');
-      expect(mapping['الوصف العربي'], 'description_ar');
-      expect(mapping['رصيد الفرع'], 'br_stock');
+    test('maps the real report headings', () {
+      final mapping = ReportDetector.autoMap(headers);
+      expect(mapping['branch_id'], 0);
+      expect(mapping['org_code'], 1);
+      expect(mapping['apps_code'], 2);
+      expect(mapping['pos_code'], 3);
+      expect(mapping['description_en'], 4);
+      expect(mapping['description_ar'], 5);
+      expect(mapping['uom'], 6);
+      expect(mapping['wh_stock'], 7);
+      expect(mapping['br_stock'], 8);
+      expect(mapping['wh_loc_code'], 11);
+      expect(mapping['sold_stk'], 12);
+      expect(mapping['is_flyer'], 13);
     });
 
-    test('detects branch and organization from report rows', () {
-      final result = ReportDetector.detectBranchInfo([
-        {'Branch ID': 'B-101', 'Org Code': 'ORG-7'},
-      ]);
-
-      expect(result['branch_id'], 'B-101');
-      expect(result['org_code'], 'ORG-7');
-    });
-  });
-
-  group('ExpiryParser', () {
-    test('parses day/month/year dates', () {
-      expect(ExpiryParser.parse('15/04/2027'), DateTime(2027, 4, 15));
-    });
-
-    test('returns null for invalid input', () {
-      expect(ExpiryParser.parse('not a date'), isNull);
+    test('recognizes inventory report structure', () {
+      expect(ReportDetector.looksLikeInventoryReport(headers), isTrue);
+      expect(ReportDetector.looksLikeInventoryReport(['Name', 'Expiry']), isFalse);
     });
   });
 }

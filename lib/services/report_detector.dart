@@ -1,55 +1,41 @@
 class ReportDetector {
-  static List<String> detectHeaders(List<Map<String, dynamic>> rows) {
-    if (rows.isEmpty) return [];
-    return rows.first.keys.map((e) => e.toString().trim()).toList();
-  }
+  static String normalize(String value) => value
+      .replaceAll('\uFEFF', '')
+      .trim()
+      .toLowerCase()
+      .replaceAll(RegExp(r'[\s\-./]+'), '_')
+      .replaceAll(RegExp(r'[^a-z0-9_\u0600-\u06ff]'), '');
 
-  static Map<String, String> detectBranchInfo(List<Map<String, dynamic>> rows) {
-    final result = <String, String>{};
-    final branchKeywords = ['branch', 'فرع', 'المكتب', 'الفرع'];
-    final orgKeywords = ['org', 'منظمة', 'المؤسسة', 'الشركة'];
+  static const Map<String, List<String>> aliases = {
+    'branch_id': ['branch_id', 'branch', 'branch_code', 'store_id', 'معرف_الفرع', 'الفرع'],
+    'org_code': ['org_code', 'organization_code', 'org', 'رمز_المنظمة'],
+    'apps_code': ['apps_code', 'app_code', 'item_code', 'sku', 'system_code', 'كود_الصنف'],
+    'pos_code': ['pos_code', 'pos', 'barcode', 'point_of_sale_code', 'كود_pos', 'باركود'],
+    'description_en': ['description', 'description_en', 'item_name', 'english_description', 'name_en'],
+    'description_ar': ['arb_desc', 'description_ar', 'arabic_description', 'name_ar', 'الوصف_العربي'],
+    'uom': ['uom', 'unit', 'unit_of_measure', 'وحدة_القياس'],
+    'wh_stock': ['wh_stock', 'warehouse_stock', 'warehouse_qty', 'wh_qty', 'كمية_المستودع'],
+    'br_stock': ['br_stock', 'branch_stock', 'branch_qty', 'stock', 'كمية_الفرع'],
+    'sold_stk': ['sold_stk', 'sold_stock', 'sold_qty', 'sales_qty', 'الكمية_المباعة'],
+    'wh_loc_code': ['wh_loc_code', 'warehouse_location', 'location', 'loc_code', 'موقع_التخزين'],
+    'is_flyer': ['flyer_item', 'is_flyer', 'flyer', 'عرض'],
+  };
 
-    for (final row in rows.take(10)) {
-      row.forEach((key, value) {
-        final k = key.toString().trim().toLowerCase();
-        final v = value.toString().trim();
-        if (v.isEmpty) return;
-        if (branchKeywords.any((kw) => k.contains(kw.toLowerCase()))) {
-          result['branch_id'] = v;
-        }
-        if (orgKeywords.any((kw) => k.contains(kw.toLowerCase()))) {
-          result['org_code'] = v;
-        }
-      });
-      if (result.containsKey('branch_id') && result.containsKey('org_code')) break;
+  static Map<String, int> autoMap(List<String> headers) {
+    final normalized = headers.map(normalize).toList();
+    final result = <String, int>{};
+    for (final entry in aliases.entries) {
+      final choices = entry.value.map(normalize).toSet();
+      final index = normalized.indexWhere(choices.contains);
+      if (index >= 0) result[entry.key] = index;
     }
     return result;
   }
 
-  static Map<String, String> suggestMapping(List<String> headers) {
-    final mapping = <String, String>{};
-    final aliases = {
-      'apps_code': ['apps_code', 'كودالنظام', 'كودالتطبيق', 'الكود', 'itemcode', 'كودالصنف'],
-      'pos_code': ['pos_code', 'بوس', 'نقطةالبيع', 'pos', 'كodenقطةالبيع', 'كودالبوس'],
-      'description_ar': ['description_ar', 'arb_desc', 'الوصفالعربي', 'اسمالصنف', 'المنتج', 'اسم المنتج', 'الوصف'],
-      'description_en': ['description_en', 'description', 'الوصفالإنجليزي', 'الاسمالإنجليزي', 'english name'],
-      'uom': ['uom', 'الوحدة', 'وحدةالقياس', 'unit', 'الوحده'],
-      'wh_stock': ['wh_stock', 'مخزنينالمستودع', 'المخزونالعام', 'الكميةفيالمخزن', 'مخزن'],
-      'br_stock': ['br_stock', 'مخزنالفرع', 'الرصيد', 'المخزون', 'stock', 'رصيد الفرع'],
-      'sold_stk': ['sold_stk', 'المباع', 'الكميةالمباعة', 'sold', 'المباعة', 'مبيعات'],
-      'wh_loc_code': ['wh_loc_code', 'الموقع', 'موقعالتخزين', 'المخزن', 'loc', 'موقع'],
-      'flyer_item': ['flyer_item', 'النشرة', 'فلاير', 'flyer', 'عروض', 'النشرة الدعائية'],
-    };
-
-    for (final header in headers) {
-      final h = header.toLowerCase().replaceAll(RegExp(r'[\s_]'), '');
-      for (final field in aliases.keys) {
-        if (aliases[field]!.any((alias) => h.contains(alias.replaceAll(RegExp(r'[\s_]'), '')))) {
-          mapping[header] = field;
-          break;
-        }
-      }
-    }
-    return mapping;
+  static bool looksLikeInventoryReport(List<String> headers) {
+    final mapped = autoMap(headers);
+    return mapped.containsKey('apps_code') &&
+        mapped.containsKey('pos_code') &&
+        mapped.containsKey('br_stock');
   }
 }

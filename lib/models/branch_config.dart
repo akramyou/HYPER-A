@@ -1,49 +1,49 @@
-import 'dart:convert';
-
 class BranchConfig {
-  final String? branchId;
-  final String? orgCode;
-  final String? branchName;
-  final Map<String, String> columnMapping;
+  const BranchConfig({
+    this.branchId = '',
+    this.orgCode = '',
+    this.branchName = '',
+    this.isConfigured = false,
+    this.notificationsEnabled = true,
+    this.defaultMinStock = 5,
+    this.columnMapping = const <String, int>{},
+  });
+
+  final String branchId;
+  final String orgCode;
+  final String branchName;
   final bool isConfigured;
   final bool notificationsEnabled;
   final double defaultMinStock;
+  final Map<String, int> columnMapping;
 
-  BranchConfig({
-    this.branchId,
-    this.orgCode,
-    this.branchName,
-    this.columnMapping = const {},
-    this.isConfigured = false,
-    this.notificationsEnabled = true,
-    this.defaultMinStock = 5.0,
-  });
-
-  Map<String, dynamic> toMap() {
-    return {
-      'branch_id': branchId,
-      'org_code': orgCode,
-      'branch_name': branchName,
-      'column_mapping': columnMapping.isNotEmpty ? jsonEncode(columnMapping) : null,
-      'is_configured': isConfigured ? 1 : 0,
-      'notifications_enabled': notificationsEnabled ? 1 : 0,
-      'default_min_stock': defaultMinStock,
-    };
-  }
-
-  factory BranchConfig.fromMap(Map<String, dynamic> m) {
+  factory BranchConfig.fromJson(Map<String, dynamic> json) {
+    final rawMapping = json['columnMapping'];
+    final mapping = <String, int>{};
+    if (rawMapping is Map) {
+      for (final entry in rawMapping.entries) {
+        final value = entry.value;
+        if (value is num) mapping[entry.key.toString()] = value.toInt();
+      }
+    }
     return BranchConfig(
-      branchId: m['branch_id'],
-      orgCode: m['org_code'],
-      branchName: m['branch_name'],
-      columnMapping: m['column_mapping'] != null
-          ? Map<String, String>.from(jsonDecode(m['column_mapping']))
-          : {},
-      isConfigured: m['is_configured'] == 1,
-      notificationsEnabled: m['notifications_enabled'] == 1,
-      defaultMinStock: (m['default_min_stock'] ?? 5.0) is int
-          ? (m['default_min_stock'] as int).toDouble()
-          : (m['default_min_stock'] ?? 5.0),
+      branchId: (json['branchId'] ?? '').toString(),
+      orgCode: (json['orgCode'] ?? '').toString(),
+      branchName: (json['branchName'] ?? '').toString(),
+      isConfigured: json['isConfigured'] == true,
+      notificationsEnabled: json['notificationsEnabled'] != false,
+      defaultMinStock: (json['defaultMinStock'] as num?)?.toDouble() ?? 5,
+      columnMapping: mapping,
     );
   }
+
+  Map<String, dynamic> toJson() => {
+        'branchId': branchId,
+        'orgCode': orgCode,
+        'branchName': branchName,
+        'isConfigured': isConfigured,
+        'notificationsEnabled': notificationsEnabled,
+        'defaultMinStock': defaultMinStock,
+        'columnMapping': columnMapping,
+      };
 }

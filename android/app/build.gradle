@@ -1,99 +1,40 @@
-def localProperties = new Properties()
-def localPropertiesFile = rootProject.file('local.properties')
-if (localPropertiesFile.exists()) {
-    localPropertiesFile.withReader('UTF-8') { reader ->
-        localProperties.load(reader)
-    }
+plugins {
+    id "com.android.application"
+    id "org.jetbrains.kotlin.android"
+    id "dev.flutter.flutter-gradle-plugin"
 }
-
-def flutterRoot = localProperties?.getProperty('flutter.sdk')
-if (flutterRoot == null) {
-    throw new GradleException("Flutter SDK not found. Define location with flutter.sdk in the local.properties file.")
-}
-
-def flutterVersionCode = localProperties?.getProperty('flutter.versionCode')
-if (flutterVersionCode == null) {
-    flutterVersionCode = '1'
-}
-
-def flutterVersionName = localProperties?.getProperty('flutter.versionName')
-if (flutterVersionName == null) {
-    flutterVersionName = '1.0.0'
-}
-
-// A private android/key.properties file may be supplied for a permanent release key.
-// In its absence, use Android's debug key so a test APK can still be built and installed.
-def keystoreProperties = new Properties()
-def keystorePropertiesFile = rootProject.file('key.properties')
-if (keystorePropertiesFile.exists()) {
-    keystorePropertiesFile.withInputStream { stream -> keystoreProperties.load(stream) }
-}
-def releaseStoreFilePath = keystoreProperties.getProperty('storeFile')
-def hasReleaseSigning = keystorePropertiesFile.exists() &&
-        keystoreProperties.getProperty('keyAlias') &&
-        keystoreProperties.getProperty('keyPassword') &&
-        keystoreProperties.getProperty('storePassword') &&
-        releaseStoreFilePath && file(releaseStoreFilePath).exists()
-
-apply plugin: 'com.android.application'
-apply plugin: 'kotlin-android'
-apply from: "$flutterRoot/packages/flutter_tools/gradle/flutter.gradle"
 
 android {
-    namespace "com.example.hyper_dammam3"
-    compileSdk 34
-
-    lintOptions {
-        disable 'InvalidPackage'
-    }
+    namespace "com.hyper.inventory"
+    compileSdk 35
 
     defaultConfig {
-        applicationId "com.example.hyper_dammam3"
-        minSdkVersion 21
-        targetSdkVersion 34
-        versionCode flutterVersionCode.toInteger()
-        versionName flutterVersionName
+        applicationId "com.hyper.inventory"
+        minSdk 21
+        targetSdk 35
+        versionCode 1
+        versionName "1.0.0"
     }
 
-    // Keep Java and Kotlin bytecode targets aligned with the JDK 17 toolchain
-    // used by GitHub Actions and required by Android Gradle Plugin 8.x.
     compileOptions {
         sourceCompatibility JavaVersion.VERSION_17
         targetCompatibility JavaVersion.VERSION_17
     }
 
     kotlinOptions {
-        jvmTarget = '17'
-    }
-
-    signingConfigs {
-        release {
-            if (hasReleaseSigning) {
-                keyAlias keystoreProperties.getProperty('keyAlias')
-                keyPassword keystoreProperties.getProperty('keyPassword')
-                storeFile file(releaseStoreFilePath)
-                storePassword keystoreProperties.getProperty('storePassword')
-            }
-        }
+        jvmTarget = "17"
     }
 
     buildTypes {
         release {
-            // Without a private keystore, produce an installable test APK signed with debug key.
-            // For production distribution, configure android/key.properties and a persistent keystore.
-            signingConfig hasReleaseSigning ? signingConfigs.release : signingConfigs.debug
+            // Debug signing creates an installable test APK. Configure a private keystore before store publication.
+            signingConfig signingConfigs.debug
             minifyEnabled false
-            // Resource shrinking requires code shrinking. Keep both disabled for this test APK.
             shrinkResources false
-            proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
         }
     }
 }
 
 flutter {
-    source '../..'
-}
-
-dependencies {
-    implementation "org.jetbrains.kotlin:kotlin-stdlib-jdk7:$kotlin_version"
+    source "../.."
 }

@@ -1,77 +1,77 @@
 import 'package:flutter/material.dart';
 
 class ItemBatch {
-  final int? id;
-  final int itemId;
-  final String? batchNumber;
-  final String? productionDate;
-  final String? expiryDate;
-  final double quantity;
-  final bool isActive;
-  final DateTime? createdAt;
-
-  ItemBatch({
+  const ItemBatch({
     this.id,
     required this.itemId,
-    this.batchNumber,
-    this.productionDate,
-    this.expiryDate,
-    this.quantity = 0,
-    this.isActive = true,
+    required this.batchNumber,
+    required this.productionDate,
+    required this.expiryDate,
+    required this.quantity,
+    required this.isActive,
     this.createdAt,
+    this.itemName = '',
+    this.appsCode = '',
   });
 
-  Map<String, dynamic> toMap() {
-    return {
-      'id': id,
-      'item_id': itemId,
-      'batch_number': batchNumber,
-      'production_date': productionDate,
-      'expiry_date': expiryDate,
-      'quantity': quantity,
-      'is_active': isActive ? 1 : 0,
-      'created_at': createdAt?.toIso8601String(),
-    };
-  }
+  final int? id;
+  final int itemId;
+  final String batchNumber;
+  final String? productionDate;
+  final String expiryDate;
+  final double quantity;
+  final bool isActive;
+  final String? createdAt;
+  final String itemName;
+  final String appsCode;
 
-  factory ItemBatch.fromMap(Map<String, dynamic> map) {
-    return ItemBatch(
-      id: map['id'],
-      itemId: map['item_id'] ?? 0,
-      batchNumber: map['batch_number'],
-      productionDate: map['production_date'],
-      expiryDate: map['expiry_date'],
-      quantity: (map['quantity'] ?? 0) is int ? (map['quantity'] as int).toDouble() : (map['quantity'] ?? 0.0),
-      isActive: map['is_active'] == 1,
-      createdAt: map['created_at'] != null ? DateTime.tryParse(map['created_at']) : null,
-    );
+  int get daysToExpiry {
+    final date = DateTime.tryParse(expiryDate);
+    if (date == null) return 999999;
+    final today = DateTime.now();
+    final normalizedToday = DateTime(today.year, today.month, today.day);
+    return DateTime(date.year, date.month, date.day).difference(normalizedToday).inDays;
   }
 
   String get expiryStatus {
-    if (expiryDate == null || expiryDate!.isEmpty) return 'تاريخ غير محدد';
-    try {
-      final expiry = DateTime.parse(expiryDate!);
-      final now = DateTime.now();
-      final diff = expiry.difference(now).inDays;
-      if (diff < 0) return 'منتهية';
-      if (diff <= 7) return 'أقل من أسبوع';
-      if (diff <= 30) return 'أقل من شهر';
-      if (diff <= 60) return 'أقل من شهرين';
-      if (diff <= 90) return 'أقل من 3 أشهر';
-      return 'سليم';
-    } catch (_) {
-      return 'تاريخ غير صحيح';
-    }
+    if (daysToExpiry < 0) return 'منتهية';
+    if (daysToExpiry <= 7) return 'أقل من أسبوع';
+    if (daysToExpiry <= 30) return 'أقل من شهر';
+    if (daysToExpiry <= 60) return 'من شهر إلى شهرين';
+    if (daysToExpiry <= 90) return 'من شهرين إلى 3 أشهر';
+    return 'آمنة';
   }
 
   Color get statusColor {
-    switch (expiryStatus) {
-      case 'منتهية': return Colors.red;
-      case 'أقل من أسبوع': return Colors.orange.shade700;
-      case 'أقل من شهر': return Colors.orange;
-      case 'أقل من شهرين': return Colors.amber;
-      case 'أقل من 3 أشهر': return Colors.yellow.shade700;
-      default: return Colors.green;
-    }
+    if (daysToExpiry < 0) return const Color(0xFFB42318);
+    if (daysToExpiry <= 7) return const Color(0xFFB54708);
+    if (daysToExpiry <= 30) return const Color(0xFFDC6803);
+    if (daysToExpiry <= 60) return const Color(0xFFE9A23B);
+    if (daysToExpiry <= 90) return const Color(0xFFD0B323);
+    return const Color(0xFF16803C);
   }
+
+  factory ItemBatch.fromMap(Map<String, Object?> map) => ItemBatch(
+        id: map['id'] as int?,
+        itemId: (map['item_id'] as num?)?.toInt() ?? 0,
+        batchNumber: (map['batch_number'] ?? '').toString(),
+        productionDate: map['production_date']?.toString(),
+        expiryDate: (map['expiry_date'] ?? '').toString(),
+        quantity: (map['quantity'] as num?)?.toDouble() ?? 0,
+        isActive: map['is_active'] == 1 || map['is_active'] == true,
+        createdAt: map['created_at']?.toString(),
+        itemName: (map['item_description_ar'] ?? map['item_description_en'] ?? '').toString(),
+        appsCode: (map['apps_code'] ?? '').toString(),
+      );
+
+  Map<String, Object?> toMap({bool includeId = false}) => {
+        if (includeId && id != null) 'id': id,
+        'item_id': itemId,
+        'batch_number': batchNumber,
+        'production_date': productionDate,
+        'expiry_date': expiryDate,
+        'quantity': quantity,
+        'is_active': isActive ? 1 : 0,
+        'created_at': createdAt ?? DateTime.now().toIso8601String(),
+      };
 }

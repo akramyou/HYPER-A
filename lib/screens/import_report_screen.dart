@@ -1,368 +1,234 @@
-import 'dart:convert';
 import 'dart:io';
 
-import 'package:csv/csv.dart';
-import 'package:excel/excel.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
-import 'package:hyper_dammam3/database/database_helper.dart';
-import 'package:hyper_dammam3/models/branch_config.dart';
-import 'package:hyper_dammam3/services/report_detector.dart';
+
+import '../database/database_helper.dart';
+import '../services/import_service.dart';
+import '../services/report_detector.dart';
+import '../widgets/app_theme.dart';
+import '../widgets/common_widgets.dart';
 
 class ImportReportScreen extends StatefulWidget {
-  const ImportReportScreen({super.key});
-
+  const ImportReportScreen({super.key, required this.onImported});
+  final VoidCallback onImported;
   @override
   State<ImportReportScreen> createState() => _ImportReportScreenState();
 }
 
 class _ImportReportScreenState extends State<ImportReportScreen> {
-  bool isLoading = false;
-  bool isCheckingConfig = true;
-  bool isConfigured = false;
-  String message = '';
-  List<String> headers = [];
-  List<Map<String, dynamic>> allRows = [];
-  Map<String, String> suggestedMapping = {};
+  ParsedReport? _report;
+  Map<String, int> _mapping = {};
+  String? _fileName;
+  bool _loading = false;
+  bool _importing = false;
+  ImportResult? _result;
+  String? _error;
 
-  @override
-  void initState() {
-    super.initState();
-    _checkConfigured();
-  }
-
-  Future<void> _checkConfigured() async {
-    try {
-      final configured = await DatabaseHelper.instance.isConfigured();
-      if (!mounted) return;
-      setState(() {
-        isConfigured = configured;
-        isCheckingConfig = false;
-        if (!configured && message.isEmpty) {
-          message = 'مرحباً! يرجى رفع أول تقرير لتحديد إعدادات الفرع تلقائياً.';
-        }
-      });
-    } catch (error) {
-      if (!mounted) return;
-      setState(() {
-        isCheckingConfig = false;
-        message = 'تعذر قراءة إعدادات الفرع: $error';
-      });
-    }
-  }
+  static const _fieldInfo = <String, String>{
+    'branch_id': 'معرف الفرع · BRANCH_ID',
+    'org_code': 'رمز المنظمة · ORG_CODE',
+    'apps_code': 'كود النظام · APPS_CODE',
+    'pos_code': 'كود نقطة البيع · POS_CODE',
+    'description_en': 'الوصف الإنجليزي · DESCRIPTION',
+    'description_ar': 'الوصف العربي · ARB_DESC',
+    'uom': 'وحدة القياس · UOM',
+    'wh_stock': 'مخزون المستودع · WH_STOCK',
+    'br_stock': 'مخزون الفرع · BR_STOCK',
+    'sold_stk': 'المباع · SOLD_STK',
+    'wh_loc_code': 'موقع التخزين · WH_LOC_CODE',
+    'is_flyer': 'النشرة الدعائية · FLYER_ITEM',
+  };
 
   Future<void> _pickFile() async {
-    if (isLoading || isCheckingConfig) return;
-
+    setState(() { _loading = true; _error = null; _result = null; });
     try {
-      final result = await FilePicker.platform.pickFiles(
-        type: FileType.custom,
-        allowedExtensions: const ['xlsx', 'csv'],
-        allowMultiple: false,
-      );
-      if (result == null || result.files.isEmpty || result.files.single.path == null) {
-        return;
-      }
-
-      setState(() {
-        isLoading = true;
-        message = '';
-        headers = [];
-        allRows = [];
-        suggestedMapping = {};
-      });
-
-      final selectedFile = result.files.single;
-      final extension = (selectedFile.extension ?? '').toLowerCase();
-      final bytes = await File(selectedFile.path!).readAsBytes();
-      late final List<List<String>> tableData;
-
-      if (extension == 'csv') {
-        // UTF-8 decoding preserves Arabic headers and product descriptions.
-        final csvText = utf8.decode(bytes, allowMalformed: true).replaceFirst('\uFEFF', '');
-        final parsed = const CsvToListConverter(shouldParseNumbers: false).convert(csvText);
-        tableData = parsed
-            .map((row) => row.map((value) => value?.toString() ?? '').toList())
-            .toList();
-      } else if (extension == 'xlsx') {
-        final workbook = Excel.decodeBytes(bytes);
-        List<List<String>>? selectedRows;
-        for (final sheet in workbook.tables.values) {
-          final candidateRows = sheet.rows
-              .map((row) => row.map((cell) => _excelCellToString(cell?.value)).toList())
-              .toList();
-          if (candidateRows.any((row) => row.any((cell) => cell.trim().isNotEmpty))) {
-            selectedRows = candidateRows;
-            break;
-          }
-        }
-        if (selectedRows == null) {
-          throw const FormatException('لم يتم العثور على ورقة عمل تحتوي على بيانات في ملف Excel.');
-        }
-        tableData = selectedRows;
-      } else {
-        throw const FormatException('صيغة الملف غير مدعومة. اختر ملف XLSX أو CSV.');
-      }
-
-      if (tableData.isEmpty) {
-        throw const FormatException('الملف فارغ أو لا يحتوي على صف عناوين.');
-      }
-
-      final parsedHeaders = tableData.first.map((value) => value.trim()).toList();
-      if (parsedHeaders.every((header) => header.isEmpty)) {
-        throw const FormatException('لم يتم العثور على عناوين للأعمدة في الصف الأول.');
-      }
-
-      final rows = <Map<String, dynamic>>[];
-      for (var i = 1; i < tableData.length; i++) {
-        final row = tableData[i];
-        final mappedRow = <String, dynamic>{};
-        for (var j = 0; j < parsedHeaders.length && j < row.length; j++) {
-          final header = parsedHeaders[j];
-          if (header.isNotEmpty) mappedRow[header] = row[j];
-        }
-        if (mappedRow.values.any((value) => value.toString().trim().isNotEmpty)) {
-          rows.add(mappedRow);
-        }
-      }
-      if (rows.isEmpty) {
-        throw const FormatException('لا توجد صفوف بيانات أسفل عناوين الأعمدة.');
-      }
-
-      final configured = await DatabaseHelper.instance.isConfigured();
-      final mapping = ReportDetector.suggestMapping(parsedHeaders);
-      final branchInfo = ReportDetector.detectBranchInfo(rows);
-
+      final picked = await FilePicker.platform.pickFiles(type: FileType.custom, allowedExtensions: const ['xlsx', 'csv'], allowMultiple: false, withData: true);
+      if (!mounted || picked == null || picked.files.isEmpty) return;
+      final file = picked.files.single;
+      final bytes = file.bytes ?? (file.path == null ? null : await File(file.path!).readAsBytes());
+      if (bytes == null) throw const FormatException('تعذر قراءة الملف المحدد.');
+      final ext = (file.extension ?? file.name.split('.').last).toLowerCase();
+      final report = await ImportService.parseBytes(bytes, ext);
       if (!mounted) return;
-      setState(() {
-        headers = parsedHeaders;
-        allRows = rows;
-        suggestedMapping = mapping;
-        isConfigured = configured;
-        isLoading = false;
-        if (!configured) {
-          message = 'تم اكتشاف التقرير. الفرع: ${branchInfo['branch_id'] ?? 'غير واضح'} | '
-              'المنظمة: ${branchInfo['org_code'] ?? 'غير واضح'}';
-        } else {
-          message = 'تمت قراءة الملف بنجاح. عدد صفوف البيانات: ${rows.length}';
-        }
-      });
-    } catch (error) {
-      if (!mounted) return;
-      setState(() {
-        message = 'خطأ أثناء قراءة الملف: $error';
-        isLoading = false;
-      });
-    }
-  }
-
-  String _excelCellToString(dynamic value) {
-    if (value == null) return '';
-    if (value is TextCellValue) return _excelTextSpanToString(value.value);
-    if (value is FormulaCellValue) return value.formula;
-    if (value is IntCellValue) return value.value.toString();
-    if (value is DoubleCellValue) return value.value.toString();
-    if (value is BoolCellValue) return value.value ? 'true' : 'false';
-    if (value is DateCellValue) {
-      return DateTime(value.year, value.month, value.day).toIso8601String().split('T').first;
-    }
-    if (value is DateTimeCellValue) return value.asDateTimeLocal().toIso8601String();
-    if (value is TimeCellValue) return value.asDuration().toString();
-    return value.toString();
-  }
-
-  // excel 4.x represents text cells as TextSpan so it can retain rich text.
-  // Flatten nested spans into plain text before mapping spreadsheet columns.
-  String _excelTextSpanToString(dynamic span) {
-    final buffer = StringBuffer();
-
-    void appendSpan(dynamic current) {
-      final text = current.text;
-      if (text is String) buffer.write(text);
-      final children = current.children;
-      if (children is Iterable) {
-        for (final child in children) {
-          appendSpan(child);
-        }
+      if (report.headers.isEmpty) throw const FormatException('لم يتم العثور على صف عناوين.');
+      final mapping = ImportService.suggestedMapping(report.headers);
+      if (!ReportDetector.looksLikeInventoryReport(report.headers)) {
+        setState(() => _error = 'لم نتعرف على التقرير بالكامل. راجع تعيين الأعمدة يدويًا قبل الاستيراد.');
       }
+      setState(() { _report = report; _mapping = mapping; _fileName = file.name; });
+    } catch (e) {
+      if (mounted) setState(() => _error = 'تعذر فتح الملف: $e');
+    } finally {
+      if (mounted) setState(() => _loading = false);
     }
-
-    appendSpan(span);
-    return buffer.toString();
   }
 
-  Future<void> _saveConfigAndImport() async {
-    if (allRows.isEmpty || isLoading) return;
-    final hasItemCode = suggestedMapping.values.any(
-      (field) => field == 'apps_code' || field == 'pos_code',
-    );
-    if (!hasItemCode) {
-      setState(() => message = 'لم أتمكن من تحديد عمود كود الصنف تلقائياً. لم تُحفظ الإعدادات؛ تأكد من أن التقرير يحتوي على عمود كود النظام أو كود نقطة البيع.');
+  bool get _mappingValid => ['branch_id', 'apps_code', 'pos_code', 'wh_stock', 'br_stock', 'sold_stk'].every((key) => _mapping.containsKey(key));
+
+  Future<void> _import() async {
+    final report = _report;
+    if (report == null) return;
+    if (!_mappingValid) {
+      setState(() => _error = 'يجب تعيين أعمدة الفرع وكود النظام وPOS ومخزون المستودع والفرع والمباع.');
       return;
     }
-    setState(() {
-      isLoading = true;
-      message = 'جارٍ حفظ إعدادات الفرع واستيراد البيانات...';
-    });
-
+    final confirmed = await showDialog<bool>(context: context, builder: (ctx) => AlertDialog(
+      title: const Text('تأكيد استيراد التقرير'),
+      content: Text('سيتم فحص ${report.rows.length} صفًا. الأصناف الموجودة ستتحدث كمياتها فقط (المستودع والفرع والمباع)، ولن يتم حذف أو تغيير تواريخ الدفعات المسجلة. هل تريد المتابعة؟'),
+      actions: [TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('مراجعة')), FilledButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('استيراد'))],
+    ));
+    if (!mounted || confirmed != true) return;
+    setState(() { _importing = true; _error = null; });
     try {
-      final db = DatabaseHelper.instance;
-      final branchInfo = ReportDetector.detectBranchInfo(allRows);
-      final branchId = branchInfo['branch_id'] ?? 'غير محدد';
-      final orgCode = branchInfo['org_code'] ?? 'غير محدد';
-      final config = BranchConfig(
-        branchId: branchId,
-        orgCode: orgCode,
-        branchName: 'فرع $branchId',
-        columnMapping: suggestedMapping,
-        isConfigured: true,
-      );
-      await db.saveBranchConfig(config);
-      final summary = await db.smartImport(
-        rows: allRows,
-        branchId: branchId,
-        orgCode: orgCode,
-        columnMapping: suggestedMapping,
-      );
+      final result = await DatabaseHelper.instance.importRows(headers: report.headers, rows: report.rows, mapping: _mapping);
       if (!mounted) return;
-      setState(() {
-        isConfigured = true;
-        isLoading = false;
-        message = 'تم تكوين الفرع والاستيراد بنجاح:\n'
-            'أصناف جديدة: ${summary['inserted']}\n'
-            'أصناف محدثة (كميات فقط): ${summary['updated']}\n'
-            'صفوف متخطاة: ${summary['skipped']}\n'
-            'ملاحظة: تم الحفاظ على تواريخ الدفعات الموجودة كما هي.';
-      });
-    } catch (error) {
-      if (!mounted) return;
-      setState(() {
-        isLoading = false;
-        message = 'تعذر استيراد التقرير: $error';
-      });
-    }
-  }
-
-  Future<void> _importOnly() async {
-    if (allRows.isEmpty || isLoading) return;
-    setState(() {
-      isLoading = true;
-      message = 'جارٍ تحديث بيانات الأصناف...';
-    });
-
-    try {
-      final db = DatabaseHelper.instance;
-      final config = await db.getBranchConfig();
-      final savedBranchId = await db.getConfig('branch_id');
-      final savedOrgCode = await db.getConfig('org_code');
-      final activeMapping = config.columnMapping.isNotEmpty ? config.columnMapping : suggestedMapping;
-      final hasItemCode = activeMapping.values.any(
-        (field) => field == 'apps_code' || field == 'pos_code',
-      );
-      if (!hasItemCode) {
-        if (!mounted) return;
-        setState(() {
-          isLoading = false;
-          message = 'لم يتم العثور على ربط صالح لكود الصنف. لم تُستورد أي بيانات؛ راجع عناوين أعمدة التقرير.';
-        });
-        return;
-      }
-      final summary = await db.smartImport(
-        rows: allRows,
-        branchId: config.branchId ?? savedBranchId ?? 'غير محدد',
-        orgCode: config.orgCode ?? savedOrgCode ?? 'غير محدد',
-        columnMapping: activeMapping,
-      );
-      if (!mounted) return;
-      setState(() {
-        isLoading = false;
-        message = 'تم تحديث التقرير:\n'
-            'أصناف جديدة: ${summary['inserted']}\n'
-            'أصناف محدثة: ${summary['updated']}\n'
-            'صفوف متخطاة: ${summary['skipped']}\n'
-            '(تم الحفاظ على تواريخ الانتهاء والإنتاج كما هي)';
-      });
-    } catch (error) {
-      if (!mounted) return;
-      setState(() {
-        isLoading = false;
-        message = 'تعذر تحديث التقرير: $error';
-      });
+      setState(() => _result = result);
+      widget.onImported();
+    } catch (e) {
+      if (mounted) setState(() => _error = 'فشل الاستيراد، ولم يتم اعتماد النتيجة: $e');
+    } finally {
+      if (mounted) setState(() => _importing = false);
     }
   }
 
   @override
-  Widget build(BuildContext context) {
-    return Directionality(
-      textDirection: TextDirection.rtl,
-      child: Scaffold(
-        appBar: AppBar(
-          title: Text(isCheckingConfig
-              ? 'تحميل إعدادات الفرع...'
-              : isConfigured
-                  ? 'استيراد تقرير يومي'
-                  : 'تكوين الفرع من التقرير الأول'),
-          centerTitle: true,
-        ),
-        body: Padding(
-          padding: const EdgeInsets.all(16),
+  Widget build(BuildContext context) => ListView(padding: const EdgeInsets.fromLTRB(16, 12, 16, 28), children: [
+    Container(padding: const EdgeInsets.all(18), decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(18), border: Border.all(color: const Color(0xFFE7ECE8))), child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+      const Text('الاستيراد الذكي للتقرير اليومي', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w900)),
+      const SizedBox(height: 6),
+      const Text('يدعم Excel XLSX وCSV. يتعرف على أعمدة تقرير DAMMAM-3، ويحدّث الكميات فقط للصنف الموجود مع إبقاء جميع دفعات الصلاحية محفوظة.', style: TextStyle(height: 1.5, color: AppTheme.muted, fontSize: 12)),
+      const SizedBox(height: 16),
+      SizedBox(width: double.infinity, child: FilledButton.icon(onPressed: _loading || _importing ? null : _pickFile, icon: _loading ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white)) : const Icon(Icons.file_open_rounded), label: Text(_loading ? 'جارٍ قراءة الملف...' : 'اختيار ملف XLSX أو CSV'))),
+      if (_fileName != null) ...[const SizedBox(height: 12), Row(children: [const Icon(Icons.description_outlined, color: AppTheme.green), const SizedBox(width: 8), Expanded(child: Text(_fileName!, style: const TextStyle(fontWeight: FontWeight.w700))), Text('${_report?.rows.length ?? 0} صف', style: const TextStyle(color: AppTheme.muted, fontSize: 12))])],
+    ])),
+    if (_error != null) ...[const SizedBox(height: 12), _MessageCard(message: _error!, color: AppTheme.red, icon: Icons.error_outline_rounded)],
+    if (_result != null) ...[const SizedBox(height: 12), _resultCard(_result!)],
+    if (_report != null) ...[
+      const SizedBox(height: 18),
+      SectionHeading('تطابق الأعمدة', subtitle: 'يمكن تعديل أي تطابق قبل الحفظ'),
+      Card(
+        child: Padding(
+          padding: const EdgeInsets.all(14),
           child: Column(
             children: [
-              ElevatedButton.icon(
-                onPressed: isLoading || isCheckingConfig ? null : _pickFile,
-                icon: const Icon(Icons.file_upload),
-                label: Text(isLoading ? 'يرجى الانتظار...' : 'اختر ملف إكسل أو CSV'),
-                style: ElevatedButton.styleFrom(minimumSize: const Size.fromHeight(50)),
-              ),
-              const SizedBox(height: 12),
-              if (headers.isNotEmpty) ...[
-                const Text('الأعمدة المكتشفة:', style: TextStyle(fontWeight: FontWeight.bold)),
-                const SizedBox(height: 6),
-                Wrap(
-                  spacing: 8,
-                  runSpacing: 4,
-                  children: headers.map((header) => Chip(label: Text(header))).toList(),
-                ),
-                const SizedBox(height: 12),
-                if (!isConfigured && suggestedMapping.isNotEmpty) ...[
-                  const Text('تطابق الأعمدة المقترح:', style: TextStyle(fontWeight: FontWeight.bold)),
-                  const SizedBox(height: 6),
-                  ...suggestedMapping.entries.take(8).map(
-                        (entry) => ListTile(
-                          dense: true,
-                          title: Text(entry.key),
-                          subtitle: Text('← ${entry.value}'),
+              ..._fieldInfo.entries.map((entry) => Padding(
+                    padding: const EdgeInsets.only(bottom: 10),
+                    child: Row(
+                      children: [
+                        Expanded(
+                          flex: 5,
+                          child: Text(entry.value, style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600)),
                         ),
-                      ),
-                ],
-              ],
-              const SizedBox(height: 16),
-              if (message.isNotEmpty)
-                Container(
-                  width: double.infinity,
-                  padding: const EdgeInsets.all(12),
-                  color: Colors.blue.shade50,
-                  child: Text(message),
-                ),
-              if (isLoading) ...[
-                const SizedBox(height: 12),
-                const LinearProgressIndicator(),
-              ],
-              const Spacer(),
-              SizedBox(
-                width: double.infinity,
-                child: ElevatedButton(
-                  onPressed: isLoading || isCheckingConfig || allRows.isEmpty
-                      ? null
-                      : (isConfigured ? _importOnly : _saveConfigAndImport),
-                  style: ElevatedButton.styleFrom(minimumSize: const Size.fromHeight(50)),
-                  child: Text(isConfigured ? 'استيراد وتحديث الكميات' : 'حفظ الإعدادات واستيراد البيانات'),
-                ),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          flex: 6,
+                          child: DropdownButtonFormField<int?>(
+                            value: _mapping[entry.key],
+                            isExpanded: true,
+                            decoration: const InputDecoration(
+                              isDense: true,
+                              contentPadding: EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                            ),
+                            items: [
+                              const DropdownMenuItem<int?>(value: null, child: Text('غير محدد', overflow: TextOverflow.ellipsis)),
+                              ...List.generate(
+                                _report!.headers.length,
+                                (i) => DropdownMenuItem<int?>(
+                                  value: i,
+                                  child: Text('${_colLetter(i)} · ${_report!.headers[i]}', overflow: TextOverflow.ellipsis),
+                                ),
+                              ),
+                            ],
+                            onChanged: (value) => setState(() {
+                              if (value == null) {
+                                _mapping.remove(entry.key);
+                              } else {
+                                _mapping[entry.key] = value;
+                              }
+                            }),
+                          ),
+                        ),
+                      ],
+                    ),
+                  )),
+              const SizedBox(height: 5),
+              _MessageCard(
+                message: _mappingValid ? 'الحقول الأساسية محددة وجاهزة للاستيراد.' : 'بعض الحقول الأساسية غير محددة. راجع التطابق قبل الاستيراد.',
+                color: _mappingValid ? AppTheme.green : const Color(0xFFB54708),
+                icon: _mappingValid ? Icons.check_circle_outline : Icons.info_outline,
               ),
             ],
           ),
         ),
       ),
-    );
+      const SizedBox(height: 18),
+      SectionHeading('معاينة البيانات', subtitle: 'أول 5 صفوف من الملف قبل الاستيراد'),
+      Card(
+        child: SingleChildScrollView(
+          scrollDirection: Axis.horizontal,
+          child: DataTable(
+            headingRowColor: MaterialStatePropertyAll(AppTheme.greenLight),
+            columns: _report!.headers.take(7).map((header) => DataColumn(
+              label: Text(header, style: const TextStyle(fontWeight: FontWeight.w800)),
+            )).toList(),
+            rows: _report!.rows.take(5).map((row) => DataRow(
+              cells: List.generate(
+                _report!.headers.length.clamp(0, 7).toInt(),
+                (i) => DataCell(SizedBox(
+                  width: 120,
+                  child: Text(
+                    i < row.length ? '${row[i] ?? ''}' : '',
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                )),
+              ),
+            )).toList(),
+          ),
+        ),
+      ),
+      const SizedBox(height: 18),
+      SizedBox(width: double.infinity, child: FilledButton.icon(onPressed: _importing || !_mappingValid ? null : _import, icon: _importing ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white)) : const Icon(Icons.save_alt_rounded), label: Text(_importing ? 'جارٍ تحديث قاعدة البيانات...' : 'اعتماد الاستيراد'))),
+      const SizedBox(height: 10),
+      const Text('ضمانات الاستيراد: لا يتم حذف الدفعات. لا يتم استبدال تواريخ الإنتاج أو الانتهاء. لا تُدمج الأصناف إلا عبر المفتاح (APPS_CODE + POS_CODE + BRANCH_ID). القيم السالبة للمخزون مسموح بها لأنها قد تظهر في التقرير الأصلي.', style: TextStyle(fontSize: 11, height: 1.5, color: AppTheme.muted)),
+    ],
+  ]);
+
+  Widget _resultCard(ImportResult result) => Container(padding: const EdgeInsets.all(16), decoration: BoxDecoration(color: AppTheme.greenLight, borderRadius: BorderRadius.circular(18)), child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+    const Text('اكتمل الاستيراد', style: TextStyle(fontWeight: FontWeight.w900, color: AppTheme.greenDark, fontSize: 16)),
+    const SizedBox(height: 10),
+    Wrap(spacing: 8, runSpacing: 8, children: [
+      _ResultChip('أضيف', result.added, AppTheme.green),
+      _ResultChip('حُدّث', result.updated, const Color(0xFF175CD3)),
+      _ResultChip('تُجاوز', result.skipped, const Color(0xFFB54708)),
+    ]),
+    const SizedBox(height: 10),
+    Text('الفرع: ${result.branchId.isEmpty ? 'غير محدد' : result.branchId} · المنظمة: ${result.orgCode.isEmpty ? 'غير محددة' : result.orgCode}', style: const TextStyle(fontSize: 12, color: AppTheme.greenDark)),
+  ]));
+
+  String _colLetter(int i) {
+    var n = i + 1;
+    var s = '';
+    while (n > 0) { final r = (n - 1) % 26; s = String.fromCharCode(65 + r) + s; n = (n - 1) ~/ 26; }
+    return s;
   }
+}
+
+class _MessageCard extends StatelessWidget {
+  const _MessageCard({required this.message, required this.color, required this.icon});
+  final String message;
+  final Color color;
+  final IconData icon;
+  @override
+  Widget build(BuildContext context) => Container(width: double.infinity, padding: const EdgeInsets.all(12), decoration: BoxDecoration(color: color.withOpacity(.08), borderRadius: BorderRadius.circular(12), border: Border.all(color: color.withOpacity(.25))), child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [Icon(icon, size: 19, color: color), const SizedBox(width: 8), Expanded(child: Text(message, style: TextStyle(color: color, fontSize: 12, height: 1.5, fontWeight: FontWeight.w600)))]));
+}
+
+class _ResultChip extends StatelessWidget {
+  const _ResultChip(this.label, this.value, this.color);
+  final String label;
+  final int value;
+  final Color color;
+  @override
+  Widget build(BuildContext context) => Container(padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8), decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(10)), child: RichText(text: TextSpan(style: const TextStyle(fontSize: 12, color: AppTheme.ink), children: [TextSpan(text: '$label: '), TextSpan(text: value.toString(), style: TextStyle(fontWeight: FontWeight.w900, color: color))])));
 }

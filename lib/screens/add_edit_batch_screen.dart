@@ -1,197 +1,142 @@
-import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
-import 'package:intl/intl.dart' show DateFormat;
-import 'package:hyper_dammam3/database/database_helper.dart';
-import 'package:hyper_dammam3/models/item_batch_model.dart';
-import 'package:hyper_dammam3/services/ocr_service.dart';
+import 'package:intl/intl.dart';
+
+import '../database/database_helper.dart';
+import '../models/item_batch_model.dart';
+import '../models/item_model.dart';
+import '../services/ml_kit_service.dart';
+import '../utils/expiry_parser.dart';
+import '../widgets/app_theme.dart';
 
 class AddEditBatchScreen extends StatefulWidget {
-  final int itemId;
+  const AddEditBatchScreen({super.key, required this.item, this.batch});
+  final InventoryItem item;
   final ItemBatch? batch;
-  const AddEditBatchScreen({super.key, required this.itemId, this.batch});
-
   @override
   State<AddEditBatchScreen> createState() => _AddEditBatchScreenState();
 }
 
 class _AddEditBatchScreenState extends State<AddEditBatchScreen> {
   final _form = GlobalKey<FormState>();
-  late TextEditingController _batchController;
-  late TextEditingController _quantityController;
-  String? _productionDate;
-  String? _expiryDate;
-  final OcrService _ocr = OcrService();
-  bool _isScanning = false;
-
-  bool get _isExpiryDatePast {
-    final value = _expiryDate;
-    if (value == null || value.isEmpty) return false;
-    try {
-      final expiry = DateTime.parse(value);
-      final expiryDay = DateTime(expiry.year, expiry.month, expiry.day);
-      final now = DateTime.now();
-      final today = DateTime(now.year, now.month, now.day);
-      return expiryDay.isBefore(today);
-    } catch (_) {
-      return false;
-    }
-  }
+  late final TextEditingController _batchNo = TextEditingController(text: widget.batch?.batchNumber ?? '');
+  late final TextEditingController _quantity = TextEditingController(text: widget.batch?.quantity.toString() ?? '0');
+  DateTime? _productionDate;
+  DateTime? _expiryDate;
+  bool _saving = false;
+  bool _scanning = false;
+  final _picker = ImagePicker();
+  final _ml = MlKitService();
 
   @override
   void initState() {
     super.initState();
-    _batchController = TextEditingController(text: widget.batch?.batchNumber ?? '');
-    _quantityController = TextEditingController(text: widget.batch?.quantity.toString() ?? '0');
-    _productionDate = widget.batch?.productionDate;
-    _expiryDate = widget.batch?.expiryDate;
+    _productionDate = DateTime.tryParse(widget.batch?.productionDate ?? '');
+    _expiryDate = DateTime.tryParse(widget.batch?.expiryDate ?? '');
   }
 
   @override
-  void dispose() {
-    _batchController.dispose();
-    _quantityController.dispose();
-    _ocr.dispose();
-    super.dispose();
-  }
+  void dispose() { _batchNo.dispose(); _quantity.dispose(); super.dispose(); }
 
-  Future<void> _pickDate(bool isExpiry) async {
-    final picked = await showDatePicker(
-      context: context,
-      initialDate: DateTime.now(),
-      firstDate: DateTime(2000),
-      lastDate: DateTime(2035),
-      locale: const Locale('ar', 'SA'),
-      builder: (context, child) => Directionality(textDirection: TextDirection.rtl, child: child!),
-    );
-    if (picked != null) {
-      setState(() {
-        if (isExpiry) _expiryDate = DateFormat('yyyy-MM-dd').format(picked);
-        else _productionDate = DateFormat('yyyy-MM-dd').format(picked);
-      });
-    }
-  }
+  String _display(DateTime? date) => date == null ? 'اختر التاريخ' : DateFormat('yyyy-MM-dd').format(date);
 
-  Future<void> _scanExpiryFromCamera() async {
-    setState(() => _isScanning = true);
-    final picker = ImagePicker();
-    final picked = await picker.pickImage(source: ImageSource.camera);
-    if (picked == null) {
-      setState(() => _isScanning = false);
-      return;
-    }
-    final file = File(picked.path);
-    final detected = await _ocr.extractExpiryDate(file);
-    setState(() => _isScanning = false);
-    if (detected != null) {
-      setState(() => _expiryDate = detected);
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('تم اكتشاف تاريخ الانتهاء: $detected'), backgroundColor: Colors.green),
-        );
+  Future<DateTime?> _pickDate(DateTime? initial) => showDatePicker(
+        context: context,
+        initialDate: initial ?? DateTime.now(),
+        firstDate: DateTime(2000),
+        lastDate: DateTime(2100),
+        helpText: 'اختر التاريخ',
+        cancelText: 'إلغاء',
+        confirmText: 'تأكيد',
+      );
+
+  Future<void> _scanExpiry() async {
+    final source = await showModalBottomSheet<ImageSource>(context: context, builder: (ctx) => SafeArea(child: Column(mainAxisSize: MainAxisSize.min, children: [
+      ListTile(leading: const Icon(Icons.photo_camera_outlined), title: const Text('التقاط صورة بالكاميرا'), onTap: () => Navigator.pop(ctx, ImageSource.camera)),
+      ListTile(leading: const Icon(Icons.photo_library_outlined), title: const Text('اختيار صورة من المعرض'), onTap: () => Navigator.pop(ctx, ImageSource.gallery)),
+    ])));
+    if (source == null) return;
+    setState(() => _scanning = true);
+    try {
+      final picked = await _picker.pickImage(source: source, imageQuality: 90);
+      if (picked == null) return;
+      final result = await _ml.recognizeText(picked.path);
+      final parsed = ExpiryParser.parse(result.text);
+      if (!mounted) return;
+      if (parsed == null) {
+        await showDialog<void>(context: context, builder: (ctx) => AlertDialog(
+          title: const Text('لم يتم العثور على تاريخ واضح'),
+          content: SingleChildScrollView(child: Text('النص الذي قرأته الأداة:\n\n${result.text.isEmpty ? 'لا يوجد نص مقروء.' : result.text}\n\nيرجى اختيار تاريخ الانتهاء يدويًا.')),
+          actions: [TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('حسنًا'))],
+        ));
+        return;
       }
-    } else {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('لم يتم التعرف على التاريخ تلقائياً، يرجى إدخاله يدوياً'), backgroundColor: Colors.orange),
-        );
-      }
+      // The OCR result is only a suggestion: the user must explicitly confirm it using the date picker.
+      final confirmed = await showDatePicker(context: context, initialDate: parsed, firstDate: DateTime(2000), lastDate: DateTime(2100), helpText: 'تأكيد تاريخ الانتهاء المقروء: ${_display(parsed)}', confirmText: 'اعتماد التاريخ', cancelText: 'إلغاء');
+      if (confirmed != null && mounted) setState(() => _expiryDate = confirmed);
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(confirmed == null ? 'لم يتم اعتماد التاريخ المقروء.' : 'تم اعتماد التاريخ ${_display(confirmed)} بعد التأكيد.')));
+    } catch (e) {
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('تعذر قراءة الصورة: $e')));
+    } finally {
+      if (mounted) setState(() => _scanning = false);
     }
   }
 
   Future<void> _save() async {
     if (!_form.currentState!.validate()) return;
-    final batch = ItemBatch(
-      id: widget.batch?.id,
-      itemId: widget.itemId,
-      batchNumber: _batchController.text.trim(),
-      productionDate: _productionDate,
-      expiryDate: _expiryDate,
-      quantity: double.tryParse(_quantityController.text) ?? 0,
-    );
-    if (widget.batch == null) {
-      await DatabaseHelper.instance.insertItemBatch(batch);
-    } else {
-      await DatabaseHelper.instance.updateItemBatch(batch);
+    if (_expiryDate == null) { ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('يرجى تحديد تاريخ الانتهاء.'))); return; }
+    if (_productionDate != null && _productionDate!.isAfter(_expiryDate!)) { ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('تاريخ الإنتاج لا يمكن أن يكون بعد تاريخ الانتهاء.'))); return; }
+    final quantity = double.tryParse(_quantity.text.trim().replaceAll(',', ''));
+    if (quantity == null || quantity < 0) { ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('الكمية يجب أن تكون رقمًا غير سالب.'))); return; }
+    setState(() => _saving = true);
+    try {
+      await DatabaseHelper.instance.saveBatch(ItemBatch(
+        id: widget.batch?.id,
+        itemId: widget.item.id!,
+        batchNumber: _batchNo.text.trim(),
+        productionDate: _productionDate == null ? null : DateFormat('yyyy-MM-dd').format(_productionDate!),
+        expiryDate: DateFormat('yyyy-MM-dd').format(_expiryDate!),
+        quantity: quantity,
+        isActive: widget.batch?.isActive ?? true,
+        createdAt: widget.batch?.createdAt,
+      ));
+      if (mounted) Navigator.pop(context, true);
+    } catch (e) {
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('تعذر حفظ الدفعة: $e')));
+    } finally {
+      if (mounted) setState(() => _saving = false);
     }
-    if (mounted) Navigator.pop(context, true);
   }
 
   @override
-  Widget build(BuildContext context) {
-    return Directionality(
-      textDirection: TextDirection.rtl,
-      child: Scaffold(
-        appBar: AppBar(title: Text(widget.batch == null ? 'إضافة دفعة جديدة' : 'تعديل الدفعة'), centerTitle: true),
-        body: Padding(
-          padding: const EdgeInsets.all(16),
-          child: Form(
-            key: _form,
-            child: ListView(
-              children: [
-                TextFormField(controller: _batchController, decoration: const InputDecoration(labelText: 'رقم الدفعة', border: OutlineInputBorder()), validator: (v) => v!.isEmpty ? 'رقم الدفعة مطلوب' : null),
-                const SizedBox(height: 12),
-                TextFormField(controller: _quantityController, decoration: const InputDecoration(labelText: 'الكمية', border: OutlineInputBorder()), keyboardType: TextInputType.number, validator: (v) => v!.isEmpty ? 'الكمية مطلوبة' : null),
-                const SizedBox(height: 16),
-                const Text('تاريخ الإنتاج', style: TextStyle(fontWeight: FontWeight.bold)),
-                const SizedBox(height: 8),
-                Row(
-                  children: [
-                    Expanded(
-                      child: ElevatedButton.icon(
-                        onPressed: () => _pickDate(false),
-                        icon: const Icon(Icons.event),
-                        label: Text(_productionDate != null ? _productionDate! : 'اختر تاريخ الإنتاج'),
-                      ),
-                    ),
-                  ],
-                ),
-                if (_productionDate != null) Padding(
-                  padding: const EdgeInsets.only(top: 8),
-                  child: Text('تم تحديد: $_productionDate', style: const TextStyle(color: Colors.green)),
-                ),
-                const SizedBox(height: 16),
-                const Text('تاريخ الانتهاء', style: TextStyle(fontWeight: FontWeight.bold)),
-                const SizedBox(height: 8),
-                Row(
-                  children: [
-                    Expanded(
-                      child: ElevatedButton.icon(
-                        onPressed: () => _pickDate(true),
-                        icon: const Icon(Icons.event_busy),
-                        label: Text(_expiryDate != null ? _expiryDate! : 'اختر تاريخ الانتهاء'),
-                      ),
-                    ),
-                    const SizedBox(width: 8),
-                    if (!_isScanning)
-                      ElevatedButton.icon(
-                        onPressed: _scanExpiryFromCamera,
-                        icon: const Icon(Icons.camera_alt),
-                        label: const Text('مسح'),
-                      )
-                    else
-                      const SizedBox(width: 40, height: 40, child: CircularProgressIndicator(strokeWidth: 2)),
-                  ],
-                ),
-                if (_expiryDate != null) Padding(
-                  padding: const EdgeInsets.only(top: 8),
-                  child: Text(
-                    'تاريخ الانتهاء: $_expiryDate',
-                    style: TextStyle(color: _isExpiryDatePast ? Colors.red : Colors.green, fontWeight: FontWeight.bold),
-                  ),
-                ),
-                const SizedBox(height: 24),
-                ElevatedButton.icon(
-                  onPressed: _isScanning ? null : _save,
-                  icon: const Icon(Icons.save),
-                  label: Text(widget.batch == null ? 'إضافة الدفعة' : 'تعديل الدفعة'),
-                  style: ElevatedButton.styleFrom(minimumSize: const Size.fromHeight(50)),
-                ),
-              ],
-            ),
-          ),
-        ),
-      ),
-    );
-  }
+  Widget build(BuildContext context) => Scaffold(
+        appBar: AppBar(title: Text(widget.batch == null ? 'إضافة دفعة' : 'تعديل الدفعة')),
+        body: Form(key: _form, child: ListView(padding: const EdgeInsets.all(16), children: [
+          Container(padding: const EdgeInsets.all(16), decoration: BoxDecoration(color: AppTheme.greenLight, borderRadius: BorderRadius.circular(16)), child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [Text(widget.item.displayName, style: const TextStyle(fontWeight: FontWeight.w800, color: AppTheme.greenDark, fontSize: 16)), const SizedBox(height: 5), Text('كود الصنف: ${widget.item.appsCode} · الفرع: ${widget.item.branchId}', style: const TextStyle(color: AppTheme.muted, fontSize: 12))])),
+          const SizedBox(height: 18),
+          TextFormField(controller: _batchNo, decoration: const InputDecoration(labelText: 'رقم الدفعة (اختياري)', prefixIcon: Icon(Icons.tag_rounded))),
+          const SizedBox(height: 12),
+          TextFormField(controller: _quantity, keyboardType: const TextInputType.numberWithOptions(decimal: true), decoration: const InputDecoration(labelText: 'كمية الدفعة', prefixIcon: Icon(Icons.numbers_rounded)), validator: (v) { final n = double.tryParse((v ?? '').trim().replaceAll(',', '')); return n == null || n < 0 ? 'أدخل كمية صحيحة غير سالبة' : null; }),
+          const SizedBox(height: 12),
+          _DateButton(label: 'تاريخ الإنتاج', value: _display(_productionDate), icon: Icons.factory_outlined, onTap: () async { final date = await _pickDate(_productionDate); if (date != null) setState(() => _productionDate = date); }),
+          const SizedBox(height: 10),
+          _DateButton(label: 'تاريخ الانتهاء *', value: _display(_expiryDate), icon: Icons.event_available_outlined, onTap: () async { final date = await _pickDate(_expiryDate); if (date != null) setState(() => _expiryDate = date); }),
+          const SizedBox(height: 12),
+          OutlinedButton.icon(onPressed: _scanning ? null : _scanExpiry, icon: _scanning ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2)) : const Icon(Icons.document_scanner_outlined), label: Text(_scanning ? 'جارٍ قراءة النص...' : 'قراءة التاريخ من صورة (OCR)')),
+          const SizedBox(height: 8),
+          const Text('ملاحظة: قراءة OCR اقتراح أولي فقط؛ يجب تأكيد التاريخ أو إدخاله يدويًا. إصدار ML Kit هذا يدعم النص اللاتيني، وقد لا يقرأ العربية بدقة.', style: TextStyle(fontSize: 12, height: 1.5, color: AppTheme.muted)),
+          const SizedBox(height: 22),
+          FilledButton.icon(onPressed: _saving ? null : _save, icon: _saving ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white)) : const Icon(Icons.save_outlined), label: Text(_saving ? 'جارٍ الحفظ...' : 'حفظ الدفعة')),
+        ])),
+      );
+}
+
+class _DateButton extends StatelessWidget {
+  const _DateButton({required this.label, required this.value, required this.icon, required this.onTap});
+  final String label;
+  final String value;
+  final IconData icon;
+  final VoidCallback onTap;
+  @override
+  Widget build(BuildContext context) => InkWell(borderRadius: BorderRadius.circular(12), onTap: onTap, child: InputDecorator(decoration: InputDecoration(labelText: label, prefixIcon: Icon(icon)), child: Row(children: [Expanded(child: Text(value, style: const TextStyle(fontWeight: FontWeight.w700))), const Icon(Icons.calendar_month_outlined, color: AppTheme.green)])));
 }
