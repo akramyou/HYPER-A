@@ -115,3 +115,7 @@ When uploading, select the *contents* of the inner `hyper_inventory` directory a
 ## XLSX text-cell compatibility fix (v7)
 
 Excel text cells expose a package-specific `TextSpan`; the importer now recursively joins its `text` and nested `children` instead of calling the unsupported `toPlainText()` method. An automated test covers a workbook with nested rich text. Flutter analysis/tests/build must still be run in GitHub Actions to verify the full Android toolchain.
+
+## Android resource merge fix (v8)
+
+`LaunchTheme` and `NormalTheme` must be defined only once. This project defines both in `android/app/src/main/res/values/themes.xml`; `styles.xml` intentionally contains no style definitions. When updating an existing GitHub repository, upload and overwrite **both** files so that older duplicate definitions are removed.

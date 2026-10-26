@@ -1,10 +1,4 @@
+<?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <style name="LaunchTheme" parent="@android:style/Theme.Light.NoTitleBar">
-        <item name="android:windowBackground">@drawable/launch_background</item>
-    </style>
-    <style name="NormalTheme" parent="@android:style/Theme.Light.NoTitleBar">
-        <item name="android:windowLightStatusBar">true</item>
-        <item name="android:colorAccent">#146B45</item>
-        <item name="android:windowBackground">?android:colorBackground</item>
-    </style>
+    <!-- Theme declarations are maintained in themes.xml. -->
 </resources>
