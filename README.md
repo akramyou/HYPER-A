@@ -81,3 +81,32 @@ flutter build apk --release --target-platform android-arm64 --analyze-size
 ## Dependency compatibility note (v5)
 
 `file_picker` is pinned to version `8.0.5` because `8.0.7` brings a `win32` dependency constraint that requires Dart SDK `>=3.4.0`; older Flutter/Dart runners may fail dependency resolution. The Android GitHub Actions workflow sets Flutter `3.24.5` and targets ARM64. After upload, confirm that the workflow file in the GitHub repository is also updated and the CI logs show the intended Flutter version.
+
+
+## Fix v6: legacy ML Kit file cleanup
+
+The repository previously retained a legacy `lib/services/ocr_service.dart` importing the removed `google_ml_kit` umbrella package. GitHub's Upload files operation replaces matching paths but does not delete files that are absent from an uploaded ZIP. This build includes compatibility replacements at both legacy paths:
+
+- `lib/services/ocr_service.dart` now delegates OCR to `MlKitService` and `google_mlkit_text_recognition`.
+- `lib/screens/ml_kit_tools_screen.dart` now delegates to the rebuilt `MlToolsScreen` instead of referring to the removed `GoogleMlKit` API.
+- Removed a redundant `google_mlkit_commons` import from `ml_kit_service.dart` (the selected plugin already exports the used common types).
+
+The ML Kit dependency set in `pubspec.yaml` is intentionally retained. These source-level fixes address the errors in the supplied analyzer log; a successful Flutter analyze/test/build still must be verified in GitHub Actions.
+
+**Upload note:** Upload the contents of `hyper_inventory/` to the application root, allowing these same-path files to overwrite the old versions. Do not upload the outer folder as an additional nested directory.
+
+
+## Fix v6 — Remove stale GoogleMlKit source references
+
+The reported analyzer errors came from a legacy `lib/services/ocr_service.dart` that imported `package:google_ml_kit/google_ml_kit.dart`, despite the rebuilt app using the specialized `google_mlkit_*` packages. GitHub's **Upload files** workflow merges uploaded paths and does not delete unuploaded old files, so older source files can remain in the repository and still be analyzed.
+
+This version deliberately overwrites the two known legacy paths:
+
+- `lib/services/ocr_service.dart`: compatibility wrapper delegating to the current `MlKitService` and `ExpiryParser`.
+- `lib/screens/ml_kit_tools_screen.dart`: compatibility route delegating to the rebuilt `MlToolsScreen`.
+- `lib/services/ml_kit_service.dart`: removes a redundant `google_mlkit_commons` import reported by the analyzer.
+- GitHub Actions: checks for remaining `package:google_ml_kit/` imports before analysis and fails with a direct message if another stale source file still contains one.
+
+The current implementation uses `google_mlkit_text_recognition`, `google_mlkit_barcode_scanning`, and `google_mlkit_image_labeling`; it does not restore the umbrella `google_ml_kit` dependency. This package-level/static cleanup has been checked locally. Flutter analysis, tests, and APK compilation still need to be run by GitHub Actions because Flutter/Dart SDKs are not installed in this environment.
+
+When uploading, select the *contents* of the inner `hyper_inventory` directory and place them at the repository's project root. Ensure `pubspec.yaml`, `lib/`, `android/`, `test/`, and `.github/` are at the same root level.

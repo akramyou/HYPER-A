@@ -1,28 +1,32 @@
-import 'package:google_ml_kit/google_ml_kit.dart';
 import 'dart:io';
-import '../utils/expiry_parser.dart';
 
+import '../utils/expiry_parser.dart';
+import 'ml_kit_service.dart';
+
+/// Backward-compatible wrapper for older screens that still import OcrService.
+/// It uses the current specialized ML Kit package through MlKitService and does
+/// not depend on the removed umbrella package `google_ml_kit`.
 class OcrService {
-  final textRecognizer = GoogleMlKit.vision.textRecognizer();
+  final MlKitService _mlKit = MlKitService();
 
   Future<String?> extractExpiryDate(File imageFile) async {
-    final inputImage = InputImage.fromFile(imageFile);
-    final recognizedText = await textRecognizer.processImage(inputImage);
-    final text = recognizedText.text;
-    final expiryDate = ExpiryParser.parse(text);
-    if (expiryDate != null) {
-      return '${expiryDate.year}-${expiryDate.month.toString().padLeft(2, '0')}-${expiryDate.day.toString().padLeft(2, '0')}';
-    }
-    return null;
+    final text = await extractAllText(imageFile);
+    final date = ExpiryParser.parse(text);
+    if (date == null) return null;
+    return '${date.year.toString().padLeft(4, '0')}-'
+        '${date.month.toString().padLeft(2, '0')}-'
+        '${date.day.toString().padLeft(2, '0')}';
   }
 
   Future<String> extractAllText(File imageFile) async {
-    final inputImage = InputImage.fromFile(imageFile);
-    final recognizedText = await textRecognizer.processImage(inputImage);
-    return recognizedText.text;
+    if (!await imageFile.exists()) {
+      throw ArgumentError.value(imageFile.path, 'imageFile', 'Image file does not exist.');
+    }
+    final result = await _mlKit.recognizeText(imageFile.path);
+    return result.text;
   }
 
-  void dispose() {
-    textRecognizer.close();
-  }
+  /// MlKitService creates and closes its recognizer per operation, so no
+  /// persistent native resource remains to release here.
+  void dispose() {}
 }
