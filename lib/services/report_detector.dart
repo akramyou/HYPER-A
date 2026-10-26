@@ -19,6 +19,8 @@ class ReportDetector {
     'sold_stk': ['sold_stk', 'sold_stock', 'sold_qty', 'sales_qty', 'الكمية_المباعة'],
     'wh_loc_code': ['wh_loc_code', 'warehouse_location', 'location', 'loc_code', 'موقع_التخزين'],
     'is_flyer': ['flyer_item', 'is_flyer', 'flyer', 'عرض'],
+    'sys_cal_qty': ['sys_cal_qty', 'system_calculated_qty', 'calculated_qty', 'الكمية_المحسوبة'],
+    'mod_qty': ['mod_qty', 'modified_qty', 'adjusted_qty', 'الكمية_المعدلة'],
   };
 
   static Map<String, int> autoMap(List<String> headers) {

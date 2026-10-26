@@ -14,6 +14,8 @@ required = [
     'assets/images/hyper_logo.png', 'lib/main.dart',
     'lib/database/database_helper.dart', 'lib/services/import_service.dart',
     'lib/services/report_detector.dart', 'lib/services/ml_kit_service.dart',
+    'lib/screens/reports_screen.dart', 'lib/screens/sales_performance_screen.dart',
+    'lib/screens/ml_tools_screen.dart', 'lib/screens/alerts_screen.dart',
     'lib/utils/expiry_parser.dart', 'test/expiry_parser_test.dart',
     'test/report_detector_test.dart', 'test/database_helper_test.dart', 'test/import_service_test.dart',
     'test/widget_test.dart',
@@ -28,8 +30,10 @@ if 'xlsx' in pubspec.get('dependencies', {}):
     raise SystemExit('Invalid dependency `xlsx`; use `excel` for XLSX files.')
 if 'excel' not in pubspec.get('dependencies', {}):
     raise SystemExit('Missing XLSX reader dependency `excel`.')
-if pubspec.get('dependencies', {}).get('google_mlkit_text_recognition') != '^0.14.0':
-    raise SystemExit('Use the published google_mlkit_text_recognition version ^0.14.0 for the pinned Flutter SDK.')
+if pubspec.get('dependencies', {}).get('google_mlkit_text_recognition') != '^0.15.0':
+    raise SystemExit('Use google_mlkit_text_recognition ^0.15.0 with google_mlkit_commons ^0.11.0 to avoid the known dependency conflict.')
+if pubspec.get('dependencies', {}).get('google_mlkit_commons') != '^0.11.0':
+    raise SystemExit('ML Kit package versions must use google_mlkit_commons ^0.11.0 in this project.')
 if 'google_ml_kit' in pubspec.get('dependencies', {}):
     raise SystemExit('Umbrella ML Kit dependency should not be used in the lean rebuild.')
 
@@ -42,9 +46,17 @@ for token in ['flutter pub get', 'flutter analyze', 'flutter test', 'android-arm
 for p in (ROOT / 'android/app/src/main').rglob('*.xml'):
     ET.parse(p)
 
+for p in [ROOT / '.github/workflows/main.yml']:
+    loaded = yaml.safe_load(p.read_text(encoding='utf-8'))
+    if not isinstance(loaded, dict) or 'jobs' not in loaded:
+        raise SystemExit(f'Invalid workflow YAML: {p}')
+
 # Guard the core data-integrity rule: existing item imports must not update batch dates.
 db_source = (ROOT / 'lib/database/database_helper.dart').read_text(encoding='utf-8')
-update_block = db_source.split('if (existing.isNotEmpty) {', 1)[1].split('} else {', 1)[0]
+for must_contain in ['import_history', 'inventory_snapshots', 'getSalesPerformance', 'reorder_level', 'AND s2.sales_mode = s.sales_mode']:
+    if must_contain not in db_source:
+        raise SystemExit(f'Missing persistent inventory history feature: {must_contain}')
+update_block = db_source.split('if (existingRows.isNotEmpty) {', 1)[1].split('} else {', 1)[0]
 for forbidden in ["'expiry_date'", "'production_date'", "'item_batches'"]:
     if forbidden in update_block:
         raise SystemExit(f'Daily import must not modify batch data: found {forbidden}')

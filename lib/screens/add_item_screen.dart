@@ -25,13 +25,19 @@ class _AddItemScreenState extends State<AddItemScreen> {
   late final TextEditingController _br = TextEditingController(text: widget.item?.brStock.toString() ?? '0');
   late final TextEditingController _sold = TextEditingController(text: widget.item?.soldStk.toString() ?? '0');
   late final TextEditingController _location = TextEditingController(text: widget.item?.whLocCode ?? '');
+  late final TextEditingController _reorder = TextEditingController(text: (widget.item?.reorderLevel ?? -1) >= 0 ? widget.item!.reorderLevel.toString() : '');
   bool _flyer = false;
+  bool _customUnit = false;
+  final TextEditingController _customUom = TextEditingController();
   bool _saving = false;
+  static const _units = <String>['CTN', 'PCS', 'EA', 'KGS', 'KG', 'G', 'LTR', 'ML', 'BOX', 'PACK', 'BAG', 'BTL', 'CAN', 'DOZ'];
 
   @override
   void initState() {
     super.initState();
     _flyer = widget.item?.isFlyer ?? false;
+    _customUnit = _uom.text.isNotEmpty && !_units.contains(_uom.text.toUpperCase());
+    if (_customUnit) _customUom.text = _uom.text;
     _loadBranch();
   }
 
@@ -44,7 +50,7 @@ class _AddItemScreenState extends State<AddItemScreen> {
 
   @override
   void dispose() {
-    for (final c in [_branch, _org, _apps, _pos, _ar, _en, _uom, _wh, _br, _sold, _location]) { c.dispose(); }
+    for (final c in [_branch, _org, _apps, _pos, _ar, _en, _uom, _customUom, _wh, _br, _sold, _location, _reorder]) { c.dispose(); }
     super.dispose();
   }
 
@@ -63,12 +69,14 @@ class _AddItemScreenState extends State<AddItemScreen> {
         posCode: _pos.text.trim(),
         descriptionAr: _ar.text.trim(),
         descriptionEn: _en.text.trim(),
-        uom: _uom.text.trim(),
+        uom: (_customUnit ? _customUom.text : _uom.text).trim(),
         whStock: _num(_wh),
         brStock: _num(_br),
         soldStk: _num(_sold),
         whLocCode: _location.text.trim(),
+        reorderLevel: _reorder.text.trim().isEmpty ? -1 : _num(_reorder),
         isFlyer: _flyer,
+        extraData: widget.item?.extraData,
         createdAt: widget.item?.createdAt ?? now,
         updatedAt: now,
       );
@@ -94,7 +102,23 @@ class _AddItemScreenState extends State<AddItemScreen> {
               _field(_pos, 'كود نقطة البيع POS_CODE', required: true, enabled: widget.item == null),
               _field(_ar, 'اسم الصنف بالعربية'),
               _field(_en, 'اسم الصنف بالإنجليزية'),
-              _field(_uom, 'وحدة القياس UOM'),
+              DropdownButtonFormField<String>(
+                value: _customUnit ? '__custom__' : (_units.contains(_uom.text.toUpperCase()) ? _uom.text.toUpperCase() : 'CTN'),
+                isExpanded: true,
+                decoration: const InputDecoration(labelText: 'وحدة القياس UOM'),
+                items: [
+                  ..._units.map((unit) => DropdownMenuItem(value: unit, child: Text(unit))),
+                  const DropdownMenuItem(value: '__custom__', child: Text('وحدة أخرى…')),
+                ],
+                onChanged: (value) => setState(() {
+                  _customUnit = value == '__custom__';
+                  if (!_customUnit) _uom.text = value ?? 'CTN';
+                }),
+              ),
+              if (_customUnit) ...[
+                const SizedBox(height: 10),
+                _field(_customUom, 'أدخل وحدة القياس المخصصة', required: true),
+              ],
             ]),
             const SizedBox(height: 14),
             _Section('الكميات وموقع التخزين', children: [
@@ -102,6 +126,8 @@ class _AddItemScreenState extends State<AddItemScreen> {
               _field(_br, 'مخزون الفرع BR_STOCK', numeric: true),
               _field(_sold, 'الكمية المباعة SOLD_STK', numeric: true),
               _field(_location, 'موقع التخزين WH_LOC_CODE'),
+              _field(_reorder, 'حد إعادة الطلب الخاص بالصنف (اختياري؛ فارغ = الافتراضي العام)', numeric: true),
+              const Padding(padding: EdgeInsets.only(bottom: 8), child: Text('عند تحديد حد خاص، تُحسب تنبيهات النقص لهذا الصنف مقارنةً به؛ وإلا يُستخدم حد الفرع من الإعدادات.', style: TextStyle(fontSize: 11, color: AppTheme.muted, height: 1.45))),
               SwitchListTile(value: _flyer, onChanged: (v) => setState(() => _flyer = v), title: const Text('الصنف ضمن النشرة الدعائية'), contentPadding: EdgeInsets.zero),
             ]),
             const SizedBox(height: 20),
@@ -117,7 +143,15 @@ class _AddItemScreenState extends State<AddItemScreen> {
           enabled: enabled,
           keyboardType: numeric ? const TextInputType.numberWithOptions(decimal: true, signed: true) : TextInputType.text,
           decoration: InputDecoration(labelText: label),
-          validator: required ? (v) => (v == null || v.trim().isEmpty) ? 'هذا الحقل مطلوب' : null : null,
+          validator: (v) {
+            if (required && (v == null || v.trim().isEmpty)) return 'هذا الحقل مطلوب';
+            if (numeric && v != null && v.trim().isNotEmpty) {
+              final parsed = double.tryParse(v.trim().replaceAll(',', ''));
+              if (parsed == null || !parsed.isFinite) return 'أدخل قيمة رقمية صحيحة.';
+              if (identical(controller, _reorder) && parsed < 0) return 'أدخل حدًا يساوي صفرًا أو أكبر، أو اتركه فارغًا.';
+            }
+            return null;
+          },
         ),
       );
 }

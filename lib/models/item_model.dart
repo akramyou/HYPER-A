@@ -12,6 +12,7 @@ class InventoryItem {
     required this.brStock,
     required this.soldStk,
     required this.whLocCode,
+    this.reorderLevel = -1,
     required this.isFlyer,
     this.extraData,
     this.createdAt,
@@ -30,6 +31,8 @@ class InventoryItem {
   final double brStock;
   final double soldStk;
   final String whLocCode;
+  /// -1 means use the branch-level default reorder threshold.
+  final double reorderLevel;
   final bool isFlyer;
   final String? extraData;
   final String? createdAt;
@@ -50,6 +53,7 @@ class InventoryItem {
         brStock: _asDouble(map['br_stock']),
         soldStk: _asDouble(map['sold_stk']),
         whLocCode: (map['wh_loc_code'] ?? '').toString(),
+        reorderLevel: _asDouble(map['reorder_level'] ?? -1),
         isFlyer: map['is_flyer'] == 1 || map['is_flyer'] == true,
         extraData: map['extra_data']?.toString(),
         createdAt: map['created_at']?.toString(),
@@ -69,6 +73,7 @@ class InventoryItem {
         'br_stock': brStock,
         'sold_stk': soldStk,
         'wh_loc_code': whLocCode,
+        'reorder_level': reorderLevel,
         'is_flyer': isFlyer ? 1 : 0,
         'extra_data': extraData,
         'created_at': createdAt ?? DateTime.now().toIso8601String(),

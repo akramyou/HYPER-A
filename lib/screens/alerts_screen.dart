@@ -39,7 +39,7 @@ class _AlertsScreenState extends State<AlertsScreen> {
           final enabled = data.settings;
           final activeBatches = data.batches.where((row) => row['is_active'] == 1).map(ItemBatch.fromMap).toList();
           final filtered = data.notificationsEnabled ? activeBatches.where((b) => _matches(b, enabled)).toList() : <ItemBatch>[];
-          final lowStock = data.items.where((i) => i.brStock <= data.threshold).toList();
+          final lowStock = data.items.where((i) => i.brStock <= (i.reorderLevel >= 0 ? i.reorderLevel : data.threshold)).toList();
           final selectedBatches = _filter == 'low_stock' ? <ItemBatch>[] : filtered.where(_filter == 'all' ? (_) => true : (batch) => _keyFor(batch) == _filter).toList();
           return RefreshIndicator(onRefresh: _refresh, child: ListView(padding: const EdgeInsets.fromLTRB(16, 12, 16, 28), children: [
             Container(padding: const EdgeInsets.all(18), decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(18), border: Border.all(color: const Color(0xFFE7ECE8))), child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [

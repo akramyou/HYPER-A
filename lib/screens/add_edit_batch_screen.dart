@@ -87,7 +87,7 @@ class _AddEditBatchScreenState extends State<AddEditBatchScreen> {
     if (_expiryDate == null) { ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('يرجى تحديد تاريخ الانتهاء.'))); return; }
     if (_productionDate != null && _productionDate!.isAfter(_expiryDate!)) { ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('تاريخ الإنتاج لا يمكن أن يكون بعد تاريخ الانتهاء.'))); return; }
     final quantity = double.tryParse(_quantity.text.trim().replaceAll(',', ''));
-    if (quantity == null || quantity < 0) { ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('الكمية يجب أن تكون رقمًا غير سالب.'))); return; }
+    if (quantity == null || !quantity.isFinite || quantity < 0) { ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('الكمية يجب أن تكون رقمًا غير سالب.'))); return; }
     setState(() => _saving = true);
     try {
       await DatabaseHelper.instance.saveBatch(ItemBatch(
@@ -116,7 +116,7 @@ class _AddEditBatchScreenState extends State<AddEditBatchScreen> {
           const SizedBox(height: 18),
           TextFormField(controller: _batchNo, decoration: const InputDecoration(labelText: 'رقم الدفعة (اختياري)', prefixIcon: Icon(Icons.tag_rounded))),
           const SizedBox(height: 12),
-          TextFormField(controller: _quantity, keyboardType: const TextInputType.numberWithOptions(decimal: true), decoration: const InputDecoration(labelText: 'كمية الدفعة', prefixIcon: Icon(Icons.numbers_rounded)), validator: (v) { final n = double.tryParse((v ?? '').trim().replaceAll(',', '')); return n == null || n < 0 ? 'أدخل كمية صحيحة غير سالبة' : null; }),
+          TextFormField(controller: _quantity, keyboardType: const TextInputType.numberWithOptions(decimal: true), decoration: const InputDecoration(labelText: 'كمية الدفعة', prefixIcon: Icon(Icons.numbers_rounded)), validator: (v) { final n = double.tryParse((v ?? '').trim().replaceAll(',', '')); return n == null || !n.isFinite || n < 0 ? 'أدخل كمية صحيحة غير سالبة' : null; }),
           const SizedBox(height: 12),
           _DateButton(label: 'تاريخ الإنتاج', value: _display(_productionDate), icon: Icons.factory_outlined, onTap: () async { final date = await _pickDate(_productionDate); if (date != null) setState(() => _productionDate = date); }),
           const SizedBox(height: 10),

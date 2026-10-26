@@ -24,6 +24,8 @@ class _ImportReportScreenState extends State<ImportReportScreen> {
   bool _importing = false;
   ImportResult? _result;
   String? _error;
+  DateTime _reportDate = DateTime.now();
+  String _salesMode = 'period';
 
   static const _fieldInfo = <String, String>{
     'branch_id': 'معرف الفرع · BRANCH_ID',
@@ -38,6 +40,8 @@ class _ImportReportScreenState extends State<ImportReportScreen> {
     'sold_stk': 'المباع · SOLD_STK',
     'wh_loc_code': 'موقع التخزين · WH_LOC_CODE',
     'is_flyer': 'النشرة الدعائية · FLYER_ITEM',
+    'sys_cal_qty': 'الكمية المحسوبة · SYS_CAL_QTY',
+    'mod_qty': 'الكمية المعدلة · MOD_QTY',
   };
 
   Future<void> _pickFile() async {
@@ -81,7 +85,7 @@ class _ImportReportScreenState extends State<ImportReportScreen> {
     if (!mounted || confirmed != true) return;
     setState(() { _importing = true; _error = null; });
     try {
-      final result = await DatabaseHelper.instance.importRows(headers: report.headers, rows: report.rows, mapping: _mapping);
+      final result = await DatabaseHelper.instance.importRows(headers: report.headers, rows: report.rows, mapping: _mapping, sourceName: _fileName ?? '', sourceFormat: report.sourceFormat, sourceFingerprint: report.fingerprint, reportDate: _reportDate, salesMode: _salesMode);
       if (!mounted) return;
       setState(() => _result = result);
       widget.onImported();
@@ -102,6 +106,38 @@ class _ImportReportScreenState extends State<ImportReportScreen> {
       SizedBox(width: double.infinity, child: FilledButton.icon(onPressed: _loading || _importing ? null : _pickFile, icon: _loading ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white)) : const Icon(Icons.file_open_rounded), label: Text(_loading ? 'جارٍ قراءة الملف...' : 'اختيار ملف XLSX أو CSV'))),
       if (_fileName != null) ...[const SizedBox(height: 12), Row(children: [const Icon(Icons.description_outlined, color: AppTheme.green), const SizedBox(width: 8), Expanded(child: Text(_fileName!, style: const TextStyle(fontWeight: FontWeight.w700))), Text('${_report?.rows.length ?? 0} صف', style: const TextStyle(color: AppTheme.muted, fontSize: 12))])],
     ])),
+    if (_fileName != null) ...[
+      const SizedBox(height: 12),
+      Card(child: Padding(padding: const EdgeInsets.all(14), child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        const Text('إعدادات اللقطة التاريخية', style: TextStyle(fontWeight: FontWeight.w900, fontSize: 15)),
+        const SizedBox(height: 4),
+        const Text('تُحفظ نسخة من كميات الأصناف مع كل تقرير حتى يمكن حساب حركة المخزون. اختر تاريخ التقرير وطريقة تفسير SOLD_STK بدقة.', style: TextStyle(fontSize: 12, color: AppTheme.muted, height: 1.45)),
+        const SizedBox(height: 12),
+        OutlinedButton.icon(
+          onPressed: _importing ? null : () async {
+            final pickedDate = await showDatePicker(context: context, initialDate: _reportDate, firstDate: DateTime(2000), lastDate: DateTime(2100), helpText: 'تاريخ التقرير كما في المصدر');
+            if (pickedDate != null && mounted) setState(() => _reportDate = pickedDate);
+          },
+          icon: const Icon(Icons.calendar_month_outlined),
+          label: Text('تاريخ التقرير: ${_dateText(_reportDate)}'),
+        ),
+        const SizedBox(height: 10),
+        DropdownButtonFormField<String>(
+          value: _salesMode,
+          decoration: const InputDecoration(labelText: 'طريقة قراءة SOLD_STK'),
+          items: const [
+            DropdownMenuItem(value: 'period', child: Text('مبيعات الفترة في التقرير الحالي')),
+            DropdownMenuItem(value: 'cumulative', child: Text('عداد تراكمي؛ احسب الفرق عن التقرير السابق')),
+          ],
+          onChanged: _importing ? null : (value) => setState(() => _salesMode = value ?? 'period'),
+        ),
+        const SizedBox(height: 8),
+        Text(_salesMode == 'period'
+            ? 'يُستخدم SOLD_STK كما ورد في هذا التقرير كمبيعات للفترة. لا تختَر هذا الوضع إلا إذا كان المصدر يوضح أن العمود يمثل مبيعات الفترة.'
+            : 'يُقارن SOLD_STK بالتقرير السابق للصنف نفسه. أول قراءة تُسجّل كخط أساس ولا تُحسب مبيعات؛ انخفاض العداد يُعلَّم كإعادة ضبط محتملة.',
+            style: const TextStyle(fontSize: 11, color: AppTheme.muted, height: 1.5)),
+      ]))),
+    ],
     if (_error != null) ...[const SizedBox(height: 12), _MessageCard(message: _error!, color: AppTheme.red, icon: Icons.error_outline_rounded)],
     if (_result != null) ...[const SizedBox(height: 12), _resultCard(_result!)],
     if (_report != null) ...[
@@ -195,17 +231,25 @@ class _ImportReportScreenState extends State<ImportReportScreen> {
     ],
   ]);
 
-  Widget _resultCard(ImportResult result) => Container(padding: const EdgeInsets.all(16), decoration: BoxDecoration(color: AppTheme.greenLight, borderRadius: BorderRadius.circular(18)), child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-    const Text('اكتمل الاستيراد', style: TextStyle(fontWeight: FontWeight.w900, color: AppTheme.greenDark, fontSize: 16)),
+  Widget _resultCard(ImportResult result) => Container(padding: const EdgeInsets.all(16), decoration: BoxDecoration(color: result.duplicateReport ? const Color(0xFFFFF4E5) : AppTheme.greenLight, borderRadius: BorderRadius.circular(18)), child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+    Text(result.duplicateReport ? 'لم يُكرر الاستيراد' : 'اكتمل الاستيراد وحُفظت اللقطة التاريخية', style: TextStyle(fontWeight: FontWeight.w900, color: result.duplicateReport ? const Color(0xFFB54708) : AppTheme.greenDark, fontSize: 16)),
     const SizedBox(height: 10),
-    Wrap(spacing: 8, runSpacing: 8, children: [
+    if (result.duplicateReport) const Text('هذا الملف سبق استيراده للتاريخ نفسه. لم تُضف بيانات جديدة ولم يتضاعف سجل المبيعات.', style: TextStyle(fontSize: 12, height: 1.5)),
+    if (!result.duplicateReport) Wrap(spacing: 8, runSpacing: 8, children: [
       _ResultChip('أضيف', result.added, AppTheme.green),
       _ResultChip('حُدّث', result.updated, const Color(0xFF175CD3)),
       _ResultChip('تُجاوز', result.skipped, const Color(0xFFB54708)),
+      _ResultChip('لقطات محفوظة', result.snapshotsSaved, const Color(0xFF067647)),
     ]),
     const SizedBox(height: 10),
     Text('الفرع: ${result.branchId.isEmpty ? 'غير محدد' : result.branchId} · المنظمة: ${result.orgCode.isEmpty ? 'غير محددة' : result.orgCode}', style: const TextStyle(fontSize: 12, color: AppTheme.greenDark)),
+    if (!result.duplicateReport && (result.counterResetCount > 0 || result.cumulativeBaselineCount > 0)) ...[
+      const SizedBox(height: 6),
+      Text('خطوط أساس للعداد: ${result.cumulativeBaselineCount} · انخفاضات/إعادة ضبط للعداد: ${result.counterResetCount}', style: const TextStyle(fontSize: 11, color: Color(0xFFB54708))),
+    ],
   ]));
+
+  String _dateText(DateTime value) => '${value.year.toString().padLeft(4, '0')}-${value.month.toString().padLeft(2, '0')}-${value.day.toString().padLeft(2, '0')}';
 
   String _colLetter(int i) {
     var n = i + 1;

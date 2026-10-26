@@ -20,6 +20,8 @@ void main() {
       expect(mapping['uom'], 6);
       expect(mapping['wh_stock'], 7);
       expect(mapping['br_stock'], 8);
+      expect(mapping['sys_cal_qty'], 9);
+      expect(mapping['mod_qty'], 10);
       expect(mapping['wh_loc_code'], 11);
       expect(mapping['sold_stk'], 12);
       expect(mapping['is_flyer'], 13);

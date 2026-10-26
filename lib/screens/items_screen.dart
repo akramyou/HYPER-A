@@ -18,11 +18,13 @@ class ItemsScreen extends StatefulWidget {
 class _ItemsScreenState extends State<ItemsScreen> {
   final _search = TextEditingController();
   late Future<List<InventoryItem>> _future;
+  String _stockFilter = 'all';
+  String _sortBy = 'name';
 
   @override
   void initState() {
     super.initState();
-    _future = DatabaseHelper.instance.getItems();
+    _future = _query();
     _search.addListener(_searchChanged);
   }
 
@@ -33,10 +35,37 @@ class _ItemsScreenState extends State<ItemsScreen> {
     super.dispose();
   }
 
-  void _searchChanged() => setState(() => _future = DatabaseHelper.instance.getItems(search: _search.text));
+  Future<List<InventoryItem>> _query() async {
+    final db = DatabaseHelper.instance;
+    final config = await db.getBranchConfig();
+    final threshold = config.defaultMinStock;
+    final items = await db.getItems(search: _search.text);
+    final filtered = items.where((item) {
+      final itemThreshold = item.reorderLevel >= 0 ? item.reorderLevel : threshold;
+      switch (_stockFilter) {
+        case 'out': return item.brStock <= 0;
+        case 'negative': return item.brStock < 0;
+        case 'critical': return item.brStock > 0 && item.brStock <= itemThreshold * 0.5;
+        case 'low': return item.brStock > itemThreshold * 0.5 && item.brStock <= itemThreshold;
+        case 'available': return item.brStock > itemThreshold;
+        case 'flyer': return item.isFlyer;
+        default: return true;
+      }
+    }).toList();
+    switch (_sortBy) {
+      case 'stock_asc': filtered.sort((a, b) => a.brStock.compareTo(b.brStock)); break;
+      case 'stock_desc': filtered.sort((a, b) => b.brStock.compareTo(a.brStock)); break;
+      case 'sold_desc': filtered.sort((a, b) => b.soldStk.compareTo(a.soldStk)); break;
+      case 'code': filtered.sort((a, b) => a.appsCode.compareTo(b.appsCode)); break;
+      default: filtered.sort((a, b) => a.displayName.toLowerCase().compareTo(b.displayName.toLowerCase()));
+    }
+    return filtered;
+  }
+
+  void _searchChanged() => setState(() => _future = _query());
 
   Future<void> _reload() async {
-    setState(() => _future = DatabaseHelper.instance.getItems(search: _search.text));
+    setState(() => _future = _query());
     await _future;
   }
 
@@ -61,15 +90,50 @@ class _ItemsScreenState extends State<ItemsScreen> {
         body: Column(children: [
           Padding(padding: const EdgeInsets.fromLTRB(16, 12, 16, 8), child: TextField(
             controller: _search,
-            decoration: const InputDecoration(prefixIcon: Icon(Icons.search_rounded), hintText: 'ابحث بالاسم أو الكود أو الموقع', suffixIcon: Icon(Icons.tune_rounded)),
+            decoration: InputDecoration(
+              prefixIcon: const Icon(Icons.search_rounded),
+              hintText: 'بحث ذكي: الاسم، الكود، POS، الموقع',
+              suffixIcon: IconButton(tooltip: 'مسح البحث', onPressed: () => _search.clear(), icon: const Icon(Icons.close_rounded)),
+            ),
           )),
+          Padding(padding: const EdgeInsets.fromLTRB(16, 0, 16, 8), child: Row(children: [
+            Expanded(child: DropdownButtonFormField<String>(
+              value: _stockFilter,
+              isExpanded: true,
+              decoration: const InputDecoration(labelText: 'حالة المخزون', isDense: true, contentPadding: EdgeInsets.symmetric(horizontal: 10, vertical: 10)),
+              items: const [
+                DropdownMenuItem(value: 'all', child: Text('كل الأصناف')),
+                DropdownMenuItem(value: 'out', child: Text('غير متوفر / صفر')),
+                DropdownMenuItem(value: 'negative', child: Text('كمية سالبة')),
+                DropdownMenuItem(value: 'critical', child: Text('مخزون حرج')),
+                DropdownMenuItem(value: 'low', child: Text('مخزون منخفض')),
+                DropdownMenuItem(value: 'available', child: Text('متوفر')),
+                DropdownMenuItem(value: 'flyer', child: Text('النشرة الدعائية')),
+              ],
+              onChanged: (value) => setState(() { _stockFilter = value ?? 'all'; _future = _query(); }),
+            )),
+            const SizedBox(width: 8),
+            Expanded(child: DropdownButtonFormField<String>(
+              value: _sortBy,
+              isExpanded: true,
+              decoration: const InputDecoration(labelText: 'ترتيب النتائج', isDense: true, contentPadding: EdgeInsets.symmetric(horizontal: 10, vertical: 10)),
+              items: const [
+                DropdownMenuItem(value: 'name', child: Text('الاسم')),
+                DropdownMenuItem(value: 'code', child: Text('كود الصنف')),
+                DropdownMenuItem(value: 'stock_asc', child: Text('الأقل مخزونًا')),
+                DropdownMenuItem(value: 'stock_desc', child: Text('الأعلى مخزونًا')),
+                DropdownMenuItem(value: 'sold_desc', child: Text('المباع بالتقرير')),
+              ],
+              onChanged: (value) => setState(() { _sortBy = value ?? 'name'; _future = _query(); }),
+            )),
+          ])),
           Expanded(child: FutureBuilder<List<InventoryItem>>(
             future: _future,
             builder: (context, snapshot) {
               if (snapshot.connectionState != ConnectionState.done) return const LoadingView();
               if (snapshot.hasError) return Center(child: Text('تعذر تحميل الأصناف: ${snapshot.error}'));
               final items = snapshot.data ?? [];
-              if (items.isEmpty) return EmptyState(icon: Icons.inventory_2_outlined, title: _search.text.isEmpty ? 'لا توجد أصناف بعد' : 'لا توجد نتائج', message: _search.text.isEmpty ? 'استورد تقرير المبيعات أو أضف صنفًا يدويًا لبدء العمل.' : 'جرّب كلمة بحث أو كودًا مختلفًا.', action: _search.text.isEmpty ? FilledButton.icon(onPressed: _addItem, icon: const Icon(Icons.add), label: const Text('إضافة أول صنف')) : null);
+              if (items.isEmpty) return EmptyState(icon: Icons.inventory_2_outlined, title: _search.text.isEmpty && _stockFilter == 'all' ? 'لا توجد أصناف بعد' : 'لا توجد نتائج', message: _search.text.isEmpty && _stockFilter == 'all' ? 'استورد تقرير المخزون أو أضف صنفًا يدويًا لبدء العمل.' : 'غيّر البحث أو حالة المخزون أو ترتيب النتائج.', action: _search.text.isEmpty && _stockFilter == 'all' ? FilledButton.icon(onPressed: _addItem, icon: const Icon(Icons.add), label: const Text('إضافة أول صنف')) : null);
               return RefreshIndicator(
                 onRefresh: _reload,
                 child: ListView.separated(
@@ -102,12 +166,13 @@ class _ItemCard extends StatelessWidget {
               const SizedBox(height: 5),
               Text('كود النظام: ${item.appsCode}  •  POS: ${item.posCode}', style: const TextStyle(fontSize: 11, color: AppTheme.muted)),
               const SizedBox(height: 6),
-              Row(children: [Icon(Icons.location_on_outlined, size: 14, color: AppTheme.muted), const SizedBox(width: 3), Text(item.whLocCode.isEmpty ? 'موقع غير محدد' : 'الموقع ${item.whLocCode}', style: const TextStyle(fontSize: 11, color: AppTheme.muted)), const Spacer(), if (item.isFlyer) const Chip(label: Text('نشرة', style: TextStyle(fontSize: 10)), visualDensity: VisualDensity.compact, padding: EdgeInsets.zero)]),
+              Row(children: [Icon(Icons.location_on_outlined, size: 14, color: AppTheme.muted), const SizedBox(width: 3), Expanded(child: Text(item.whLocCode.isEmpty ? 'موقع غير محدد' : 'الموقع ${item.whLocCode}', style: const TextStyle(fontSize: 11, color: AppTheme.muted), overflow: TextOverflow.ellipsis)), if (item.isFlyer) const Chip(label: Text('نشرة', style: TextStyle(fontSize: 10)), visualDensity: VisualDensity.compact, padding: EdgeInsets.zero)]),
+              Text('حد إعادة الطلب: ${item.reorderLevel >= 0 ? formatQuantity(item.reorderLevel) : 'حد الفرع الافتراضي'}', style: const TextStyle(fontSize: 10, color: AppTheme.muted)),
             ])),
             const SizedBox(width: 8),
             Column(crossAxisAlignment: CrossAxisAlignment.end, children: [
               const Text('مخزون الفرع', style: TextStyle(fontSize: 10, color: AppTheme.muted)),
-              Text(formatQuantity(item.brStock), style: TextStyle(fontWeight: FontWeight.w900, fontSize: 17, color: item.brStock < 0 ? AppTheme.red : AppTheme.green)),
+              Text(formatQuantity(item.brStock), style: TextStyle(fontWeight: FontWeight.w900, fontSize: 17, color: item.brStock <= 0 ? AppTheme.red : AppTheme.green)),
               Text(item.uom, style: const TextStyle(fontSize: 10, color: AppTheme.muted)),
             ]),
             const SizedBox(width: 4), const Icon(Icons.chevron_left_rounded, color: AppTheme.muted),

@@ -8,6 +8,7 @@ import 'screens/import_report_screen.dart';
 import 'screens/items_screen.dart';
 import 'screens/ml_tools_screen.dart';
 import 'screens/reports_screen.dart';
+import 'screens/sales_performance_screen.dart';
 import 'screens/settings_screen.dart';
 import 'widgets/app_theme.dart';
 
@@ -82,13 +83,15 @@ class _AppShellState extends State<AppShell> {
               switch (value) {
                 case 'analytics': _open(const AnalyticsScreen()); break;
                 case 'reports': _open(const ReportsScreen()); break;
+                case 'sales': _open(const SalesPerformanceScreen()); break;
                 case 'ml': _open(const MlToolsScreen()); break;
                 case 'settings': _open(const SettingsScreen()); break;
               }
             },
             itemBuilder: (_) => const [
               PopupMenuItem(value: 'analytics', child: ListTile(leading: Icon(Icons.insights_rounded), title: Text('التحليل البياني'), dense: true)),
-              PopupMenuItem(value: 'reports', child: ListTile(leading: Icon(Icons.description_outlined), title: Text('التقارير'), dense: true)),
+              PopupMenuItem(value: 'reports', child: ListTile(leading: Icon(Icons.description_outlined), title: Text('التقارير والفلاتر المتقدمة'), dense: true)),
+              PopupMenuItem(value: 'sales', child: ListTile(leading: Icon(Icons.query_stats_rounded), title: Text('حركة المبيعات ودوران الأصناف'), dense: true)),
               PopupMenuItem(value: 'ml', child: ListTile(leading: Icon(Icons.document_scanner_outlined), title: Text('أدوات الصورة والذكاء الاصطناعي'), dense: true)),
               PopupMenuItem(value: 'settings', child: ListTile(leading: Icon(Icons.settings_outlined), title: Text('الإعدادات والنسخ الاحتياطي'), dense: true)),
             ],

@@ -56,7 +56,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
   Future<void> _saveConfig() async {
     if (!_form.currentState!.validate()) return;
     final threshold = double.tryParse(_minStock.text.trim());
-    if (threshold == null || threshold < 0) { ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('أدخل حدًا أدنى صحيحًا للمخزون.'))); return; }
+    if (threshold == null || !threshold.isFinite || threshold < 0) { ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('أدخل حدًا أدنى صحيحًا للمخزون.'))); return; }
     setState(() => _busy = true);
     try {
       await DatabaseHelper.instance.saveBranchConfig(BranchConfig(branchId: _branchId.text.trim(), orgCode: _orgCode.text.trim(), branchName: _branchName.text.trim(), isConfigured: _branchId.text.trim().isNotEmpty, notificationsEnabled: _notificationsEnabled, defaultMinStock: threshold, columnMapping: _columnMapping));
